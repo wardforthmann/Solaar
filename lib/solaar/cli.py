@@ -237,6 +237,32 @@ def unpair_device(receiver, args):
 
 
 def config_device(receiver, args):
+	import configuration
+
+	if args.device is None:
+		# this gives a copy
+		saved_configuration = configuration.all()
+
+		for k, v in list(saved_configuration.items()):
+			if k.startswith('_'):
+				print ("#", k[1:], ":", v)
+				del saved_configuration[k]
+				continue
+
+		for device_key, device_configuration in saved_configuration.items():
+			print ("")
+			print ("[%s]" % device_key)
+
+			for k, v in list(device_configuration.items()):
+				if k.startswith('_'):
+					print ("#", k[1:], ":", v)
+					del device_configuration[k]
+					continue
+
+			for name, value in device_configuration.items():
+				print (name, "=", value)
+		return
+
 	dev = _find_device(receiver, args.device)
 	# if dev is receiver:
 	# 	_fail("no settings for the receiver")
@@ -320,6 +346,10 @@ def config_device(receiver, args):
 		_fail("failed to set '%s' = '%s' [%s]" % (setting.name, value, repr(value)))
 	print ("%s = %s" % (setting.name, result))
 
+	# save the setting in the current configuration
+	configuration.set(dev, setting.name, value)
+	configuration.save()
+
 #
 #
 #
@@ -343,7 +373,7 @@ def _parse_arguments():
 
 	sp = subparsers.add_parser('config', help='read/write device-specific settings',
 								epilog='Please note that configuration only works on active devices.')
-	sp.add_argument('device',
+	sp.add_argument('device', nargs='?',
 					help='device to configure; may be a device number (1..6), a device serial, '
 							'or at least 3 characters of a device\'s name')
 	sp.add_argument('setting', nargs='?',

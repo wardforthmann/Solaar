@@ -8,6 +8,7 @@ from logging import getLogger, DEBUG as _DEBUG
 _log = getLogger('listener')
 del getLogger
 
+import configuration
 from logitech.unifying_receiver import (Receiver,
 										listener as _listener,
 										status as _status)
@@ -66,6 +67,8 @@ class ReceiverListener(_listener.EventsListener):
 		self.receiver = None
 		self._status_changed(None, _status.ALERT.LOW)
 
+		configuration.save()
+
 	def tick(self, timestamp):
 		if _log.isEnabledFor(_DEBUG):
 			_log.debug("polling status: %s %s", self.receiver, list(iter(self.receiver)))
@@ -102,9 +105,16 @@ class ReceiverListener(_listener.EventsListener):
 				self.status_changed_callback(r, None, alert, reason)
 			else:
 				if device.status is None:
+					# the device may be paired later, possibly to another receiver?
+					# so maybe we shouldn't forget about it
+					# configuration.forget(device)
+
 					# device was unpaired, and since the object is weakref'ed
 					# it won't be valid for much longer
 					device = _ghost(device)
+
+				# elif device.status:
+				# 	configuration.sync(device)
 
 				self.status_changed_callback(r, device, alert, reason)
 
