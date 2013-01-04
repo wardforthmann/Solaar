@@ -186,6 +186,7 @@ def main():
 		while t.is_alive():
 			line = read_packet(prompt)
 			line = line.strip().replace(' ', '')
+			print ("line", line)
 			if not line:
 				continue
 
