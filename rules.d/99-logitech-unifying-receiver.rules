@@ -1,12 +1,16 @@
 # Initially copied from signal11/hidapi/udev, with modifications.
 
 # This is a sample udev file for HIDAPI devices which changes the permissions
-# to 0660 and group to plugdev for a specified device on Linux systems.
+# to 0660 and group to plugdev for a Logitech's Nano and Unifying Receiver
+# devices on Linux systems.
 
 # Make sure the plugdev group exists on your system and your user is a member
 # before applying these rules.
 
-# HIDAPI/hidraw
+# HIDAPI/hidraw for Logitech Unifying Receiver
 ACTION=="add", KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c52b", GROUP="plugdev", MODE="0660"
+
+# HIDAPI/hidraw for Logitech Nano Receiver
+ACTION=="add", KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c526", GROUP="plugdev", MODE="0660"
 
 # vim: ft=udevrules

@@ -72,6 +72,11 @@ def receivers():
 		if d.driver == 'logitech-djreceiver':
 			yield d
 
+	# and this one is for the Nano receiver
+	for d in _hid.enumerate(0x046d, 0xc526):
+		if d.driver == 'generic-usb':
+			yield d
+
 
 def open_path(path):
 	"""Checks if the given Linux device path points to the right UR device.
