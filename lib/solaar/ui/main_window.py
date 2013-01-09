@@ -242,6 +242,18 @@ def _make_device_box(index):
 	return frame
 
 
+def _create_devices_panel():
+	devices_list = Gtk.TreeView()
+
+	device_settings = Gtk.VBox()
+
+	panel = Gtk.HPaned()
+	panel.add1(devices_list)
+	panel.add2(device_settings)
+
+	return panel
+
+
 def create(title, name, max_devices, systray=False):
 	window = Gtk.Window()
 	window.set_title(title)
@@ -251,20 +263,37 @@ def create(title, name, max_devices, systray=False):
 	vbox = Gtk.VBox(homogeneous=False, spacing=12)
 	vbox.set_border_width(4)
 
-	rbox = _make_receiver_box(name)
-	vbox.add(rbox)
-	for i in range(1, 1 + max_devices):
-		dbox = _make_device_box(i)
-		vbox.add(dbox)
-	vbox.set_visible(True)
+	title_label = Gtk.Label('Known devices')
+	vbox.pack_start(title_label)
+
+	vbox.pack_start(_create_devices_panel(), True, True, 0)
+
+	about_button = Gtk.Button('About')
+	about_button.set_image(Gtk.Image.new_from_icon_name('help-about', Gtk.IconSize.BUTTON))
+	about_button.connect('clicked', _action._show_about_window)
+	about_button.set_relief(Gtk.ReliefStyle.NONE)
+
+	buttons_box = Gtk.HButtonBox()
+	buttons_box.set_layout(Gtk.ButtonBoxStyle.START)
+	buttons_box.add(about_button)
+
+	vbox.pack_end(buttons_box, False, False, 0)
+	vbox.show_all()
+
+	# rbox = _make_receiver_box(name)
+	# vbox.add(rbox)
+	# for i in range(1, 1 + max_devices):
+	# 	dbox = _make_device_box(i)
+	# 	vbox.add(dbox)
+	# vbox.set_visible(True)
 
 	window.add(vbox)
 
 	geometry = Gdk.Geometry()
-	geometry.min_width = 320
-	geometry.min_height = 32
+	geometry.min_width = 500
+	geometry.min_height = 320
 	window.set_geometry_hints(vbox, geometry, Gdk.WindowHints.MIN_SIZE)
-	window.set_resizable(False)
+	# window.set_resizable(False)
 
 	def _toggle_visible(w, trigger):
 		if w.get_visible():
@@ -433,5 +462,5 @@ def update(window, receiver, device=None):
 		if not receiver:
 			for frame in frames[1:]:
 				_update_device_box(frame, None)
-	else:
-		_update_device_box(frames[device.number], None if device.status is None else device)
+	# else:
+	# 	_update_device_box(frames[device.number], None if device.status is None else device)

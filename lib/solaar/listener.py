@@ -149,8 +149,8 @@ class ReceiverListener(_listener.EventsListener):
 	__unicode__ = __str__
 
 	@classmethod
-	def open(self, status_changed_callback=None):
-		receiver = Receiver.open()
+	def open(self, path, status_changed_callback=None):
+		receiver = Receiver.open(path)
 		if receiver:
 			rl = ReceiverListener(receiver, status_changed_callback)
 			rl.start()

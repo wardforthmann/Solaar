@@ -67,25 +67,29 @@ def _run(args):
 	else:
 		icon = None
 
-	listener = [None]
+	listeners = {}
+	from logitech.unifying_receiver import base as _base
 
 	# initializes the receiver listener
-	def check_for_listener(notify=False):
-		# print ("check_for_listener", notify)
-		listener[0] = None
+	def check_for_receivers(notify=False):
+		# print ("check_for_receivers", notify)
 
-		try:
-			listener[0] = ReceiverListener.open(status_changed)
-		except OSError:
-			ui.error_dialog(window, 'Permissions error',
-							'Found a possible Unifying Receiver device,\n'
-							'but did not have permission to open it.')
+		for r in _base.receivers():
+			if r.path not in listeners:
+				try:
+					l = ReceiverListener.open(r.path, status_changed)
+					if l:
+						listeners[r.path] = l
+				except OSError:
+					pass
+					# ui.error_dialog(window, 'Permissions error',
+					# 				'Found a possible Unifying Receiver device,\n'
+					# 				'but did not have permission to open it.')
 
-		if listener[0] is None:
+		if not listeners:
 			if notify:
 				status_changed(DUMMY)
-			else:
-				return True
+		return True
 
 	from gi.repository import Gtk, GObject
 	from logitech.unifying_receiver import status
@@ -104,15 +108,16 @@ def _run(args):
 			if device is None or alert & status.ALERT.LOW:
 				GObject.idle_add(ui.notify.show, device or receiver, reason)
 
-		if receiver is DUMMY:
-			GObject.timeout_add(3000, check_for_listener)
+		# if receiver is DUMMY:
+		# 	GObject.timeout_add(3000, check_for_listener)
 
-	GObject.timeout_add(10, check_for_listener, True)
+	GObject.timeout_add(10, check_for_receivers, True)
 	Gtk.main()
 
-	if listener[0]:
-		listener[0].stop()
-		listener[0].join()
+	for l in listeners.values():
+		l.stop()
+	while listeners:
+		listeners.popitem()[1].join()
 
 	ui.notify.uninit()
 
