@@ -70,55 +70,43 @@ def _run(args):
 	listeners = {}
 	from logitech.unifying_receiver import base as _base
 
-	# initializes the receiver listener
-	def check_for_receivers(notify=False):
-		# print ("check_for_receivers", notify)
+	def receivers_events(action, r):
+		if action == 'add':
+			try:
+				l = ReceiverListener.open(r.path, status_changed)
+				if l:
+					listeners[r.path] = l
+			except OSError:
+				# permission error, blacklist this path for now
+				import logging
+				logging.exception("failed to open %s", r.path)
+				listeners[r.path] = None
+				# ui.error_dialog(window, 'Permissions error',
+				# 				'Found a possible Unifying Receiver device,\n'
+				# 				'but did not have permission to open it.')
 
-		for r in _base.receivers():
-			if r.path not in listeners:
-				try:
-					l = ReceiverListener.open(r.path, status_changed)
-					if l:
-						listeners[r.path] = l
-				except OSError:
-					pass
-					# ui.error_dialog(window, 'Permissions error',
-					# 				'Found a possible Unifying Receiver device,\n'
-					# 				'but did not have permission to open it.')
-
-		if not listeners:
-			if notify:
-				status_changed(DUMMY)
-		return True
-
-	from gi.repository import Gtk, GObject
+	from gi.repository import Gtk, GLib
 	from logitech.unifying_receiver import status
 
 	# callback delivering status notifications from the receiver/devices to the UI
 	def status_changed(receiver, device=None, alert=status.ALERT.NONE, reason=None):
+		# print ("status changed", receiver, device, reason)
 		if alert & status.ALERT.MED:
-			GObject.idle_add(window.present)
+			GLib.idle_add(window.present)
 		if window:
-			GObject.idle_add(ui.main_window.update, window, receiver, device)
+			GLib.idle_add(ui.main_window.update, window, receiver, device)
 		if icon:
-			GObject.idle_add(ui.status_icon.update, icon, receiver, device)
+			GLib.idle_add(ui.status_icon.update, icon, receiver, device)
 
 		if ui.notify.available:
 			# always notify on receiver updates
 			if device is None or alert & status.ALERT.LOW:
-				GObject.idle_add(ui.notify.show, device or receiver, reason)
+				GLib.idle_add(ui.notify.show, device or receiver, reason)
 
-		# if receiver is DUMMY:
-		# 	GObject.timeout_add(3000, check_for_listener)
-
-	GObject.timeout_add(10, check_for_receivers, True)
+	GLib.timeout_add(50, _base.notify_on_receivers, receivers_events)
 	Gtk.main()
 
-	for l in listeners.values():
-		l.stop()
-	while listeners:
-		listeners.popitem()[1].join()
-
+	[l.stop() for l in listeners.values() if l]
 	ui.notify.uninit()
 
 

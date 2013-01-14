@@ -5,6 +5,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 from gi.repository import Gtk
+import os.path as _path
 
 #
 #
@@ -64,13 +65,22 @@ def device_icon_set(name, kind=None):
 	return icon_set
 
 
-def device_icon_file(name, kind=None):
+def device_icon_file(name, kind=None, size=_LARGE_SIZE):
 	icon_set = device_icon_set(name, kind)
 	assert icon_set
 	theme = Gtk.IconTheme.get_default()
 	for n in reversed(icon_set.names):
 		if theme.has_icon(n):
-			return theme.lookup_icon(n, _LARGE_SIZE, 0).get_filename()
+			return theme.lookup_icon(n, size, 0).get_filename()
+
+
+def device_icon_name(name, kind=None):
+	icon_set = device_icon_set(name, kind)
+	assert icon_set
+	theme = Gtk.IconTheme.get_default()
+	for n in reversed(icon_set.names):
+		if theme.has_icon(n):
+			return n
 
 
 def icon_file(name, size=_LARGE_SIZE):

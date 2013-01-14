@@ -186,7 +186,7 @@ def main():
 		while t.is_alive():
 			line = read_packet(prompt)
 			line = line.strip().replace(' ', '')
-			print ("line", line)
+			# print ("line", line)
 			if not line:
 				continue
 
@@ -200,7 +200,8 @@ def main():
 			if args.hidpp and not interactive:
 				if data[1:2] == b'\xFF':
 					# the receiver will reply very fast, in a few milliseconds
-					time.sleep(0.010)
+					rlist, wlist, xlist = _select([handle], [], [], 1)
+					time.sleep(0.100)
 				else:
 					# the devices might reply quite slow
 					rlist, wlist, xlist = _select([handle], [], [], 1)
@@ -208,6 +209,8 @@ def main():
 	except EOFError:
 		if interactive:
 			print ("")
+		else:
+			time.sleep(1)
 	except Exception as e:
 		print ('%s: %s' % (type(e).__name__, e))
 

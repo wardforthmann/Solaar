@@ -25,7 +25,7 @@ del namedtuple
 def _ghost(device):
 	return _GHOST_DEVICE(number=device.number, name=device.name, kind=device.kind, status=None, max_devices=None)
 
-DUMMY = _GHOST_DEVICE(Receiver.number, Receiver.name, None, 'Receiver not found.', Receiver.max_devices)
+DUMMY = _GHOST_DEVICE(Receiver.number, '-', None, 'Receiver not found.', 0)
 
 #
 #
@@ -37,7 +37,7 @@ _POLL_TICK = 60  # seconds
 
 
 class ReceiverListener(_listener.EventsListener):
-	"""Keeps the status of a Unifying Receiver.
+	"""Keeps the status of a Receiver.
 	"""
 	def __init__(self, receiver, status_changed_callback=None):
 		super(ReceiverListener, self).__init__(receiver, self._notifications_handler)
@@ -63,8 +63,8 @@ class ReceiverListener(_listener.EventsListener):
 		if self.receiver:
 			self.receiver.enable_notifications(False)
 			self.receiver.close()
-		self.receiver = None
 		self._status_changed(None, _status.ALERT.LOW)
+		self.receiver = None
 
 	def tick(self, timestamp):
 		if _log.isEnabledFor(_DEBUG):
@@ -95,24 +95,25 @@ class ReceiverListener(_listener.EventsListener):
 						None if device is None else 'active' if device.status else 'inactive',
 						None if device is None else device.status,
 						alert, reason or '')
+
 		if self.status_changed_callback:
-			r = self.receiver or DUMMY
 			if device is None or device.kind is None:
 				# the status of the receiver changed
-				self.status_changed_callback(r, None, alert, reason)
+				self.status_changed_callback(self.receiver, None, alert, reason)
 			else:
 				if device.status is None:
 					# device was unpaired, and since the object is weakref'ed
 					# it won't be valid for much longer
 					device = _ghost(device)
 
-				self.status_changed_callback(r, device, alert, reason)
+				self.status_changed_callback(self.receiver, device, alert, reason)
 
 				if device.status is None:
 					# the receiver changed status as well
-					self.status_changed_callback(r)
+					self.status_changed_callback(self.receiver)
 
 	def _notifications_handler(self, n):
+		_log.debug("handling %s", n)
 		assert self.receiver
 		if n.devnumber == 0xFF:
 			# a receiver notification

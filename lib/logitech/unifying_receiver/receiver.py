@@ -32,6 +32,7 @@ class PairedDevice(object):
 		assert number > 0 and number <= MAX_PAIRED_DEVICES
 		self.number = number
 
+		self._unifying = None
 		self._protocol = None
 		self._wpid = None
 		self._power_switch = None
@@ -59,6 +60,7 @@ class PairedDevice(object):
 		if self._wpid is None:
 			pair_info = self.receiver.request(0x83B5, 0x20 + self.number - 1)
 			if pair_info:
+				self._unifying = True
 				self._wpid = _strhex(pair_info[3:5])
 				if self._kind is None:
 					kind = ord(pair_info[7:8]) & 0x0F
@@ -69,7 +71,7 @@ class PairedDevice(object):
 
 	@property
 	def polling_rate(self):
-		if self._polling_rate is None:
+		if self._polling_rate is None and self._unifying:
 			self.wpid, 0
 		return self._polling_rate
 
@@ -184,7 +186,7 @@ class PairedDevice(object):
 		return self.serial.__hash__()
 
 	def __str__(self):
-		return '<PairedDevice(%d,%s)>' % (self.number, self.codename or '?')
+		return '<PairedDevice(%d,%s,%s)>' % (self.number, self.wpid, self.codename or '?')
 	__unicode__ = __repr__ = __str__
 
 #
@@ -197,15 +199,20 @@ class Receiver(object):
 	The paired devices are available through the sequence interface.
 	"""
 	number = 0xFF
-	name = 'Unifying Receiver'
 	kind = None
-	max_devices = MAX_PAIRED_DEVICES
 
 	def __init__(self, handle, path=None):
 		assert handle
 		self.handle = handle
 		assert path
 		self.path = path
+
+		if self.request(0x83B3):
+			self.name = 'Unifying Receiver'
+			self.max_devices = 6
+		else:
+			self.name = 'Nano Receiver'
+			self.max_devices = 1
 
 		self._serial = None
 		self._firmware = None
@@ -260,8 +267,16 @@ class Receiver(object):
 			raise IndexError("device number %d already registered" % number)
 		dev = PairedDevice(self, number)
 		# create a device object, but only use it if the receiver knows about it
+
+		if self.max_devices == 1 and number == 1:
+			# the Nano receiver does not provide the wpid
+			_log.info("found Nano device %d (%s)", number, dev.serial)
+			# dev._wpid = self.serial + ':1'
+			self._devices[number] = dev
+			return dev
+
 		if dev.wpid:
-			_log.info("found device %d (%s)", number, dev.wpid)
+			# _log.info("found Unifying device %d (%s)", number, dev.wpid)
 			self._devices[number] = dev
 			return dev
 		self._devices[number] = None
@@ -328,35 +343,27 @@ class Receiver(object):
 
 		return self.__contains__(dev.number)
 
+	def __eq__(self, other):
+		return self.path == other.path
+
+	def __ne__(self, other):
+		return self.path != other.path
+
+	def __hash__(self):
+		return self.path.__hash__()
+
 	def __str__(self):
-		return '<Receiver(%s,%s%s)>' % (self.path, '' if type(self.handle) == int else 'T', self.handle)
+		return '<Receiver(%s,%s,%s%s)>' % (self.path, self.name, '' if type(self.handle) == int else 'T', self.handle)
 	__unicode__ = __repr__ = __str__
 
 	__bool__ = __nonzero__ = lambda self: self.handle is not None
 
 	@classmethod
 	def open(self, path):
-		# """Opens the first Logitech Unifying Receiver found attached to the machine.
+		"""Opens a Logitech Receiver found attached to the machine, by device path.
 
-		# :returns: An open file handle for the found receiver, or ``None``.
-		# """
-		# exception = None
-		#
-		# for rawdevice in _base.receivers():
-		# 	exception = None
-		# 	try:
-		# 		handle = _base.open_path(rawdevice.path)
-		# 		if handle:
-		# 			return Receiver(handle, rawdevice.path)
-		# 	except OSError as e:
-		# 		_log.exception("open %s", rawdevice.path)
-		# 		if e.errno == _errno.EACCES:
-		# 			exception = e
-		#
-		# if exception:
-		# 	# only keep the last exception
-		# 	raise exception
-
+		:returns: An open file handle for the found receiver, or ``None``.
+		"""
 		try:
 			handle = handle = _base.open_path(path)
 			if handle:
