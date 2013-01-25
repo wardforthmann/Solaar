@@ -177,10 +177,10 @@ class PairedDevice(object):
 	__int__ = __index__
 
 	def __eq__(self, other):
-		return self.serial == other.serial
+		return self.kind == other.kind and self.serial == other.serial
 
 	def __ne__(self, other):
-		return self.serial != other.serial
+		return self.kind != other.kind or self.serial != other.serial
 
 	def __hash__(self):
 		return self.serial.__hash__()
@@ -344,10 +344,10 @@ class Receiver(object):
 		return self.__contains__(dev.number)
 
 	def __eq__(self, other):
-		return self.path == other.path
+		return self.kind == other.kind and self.path == other.path
 
 	def __ne__(self, other):
-		return self.path != other.path
+		return self.kind != other.kind or self.path != other.path
 
 	def __hash__(self):
 		return self.path.__hash__()

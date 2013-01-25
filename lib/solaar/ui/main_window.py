@@ -796,5 +796,6 @@ def update(window, receiver, device=None):
 
 	window._tree.expand_all()
 	model, iter = window._tree.get_selection().get_selected()
-	device = model.get_value(iter, _COLUMN.OBJ) if iter else None
-	_update_info_panel(device, window)
+	selected_device = model.get_value(iter, _COLUMN.OBJ) if iter else None
+	if device == selected_device:
+		_update_info_panel(device, window)

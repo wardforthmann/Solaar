@@ -218,7 +218,7 @@ class DeviceStatus(dict):
 				if _log.isEnabledFor(_DEBUG):
 					sw_present = bool(flags & 0x10)
 					has_payload = bool(flags & 0x80)
-					_log.debug("%s: connection notification: software=%s, encrypted=%s, link=%s, payload=%s",
+					_log.debug("%s: unifying connection notification: software=%s, encrypted=%s, link=%s, payload=%s",
 								self._device, sw_present, link_encrypyed, link_established, has_payload)
 				self[ENCRYPTED] = link_encrypyed
 				self._changed(link_established)
@@ -231,14 +231,13 @@ class DeviceStatus(dict):
 				if self._device._wpid is None:
 					self._device._wpid = _strhex(n.data[4:5] + n.data[3:4])
 
-				# _log.warn("%s: connection notification with eQuad protocol, ignored: %s", self._device.number, n)
 				flags = ord(n.data[:1]) & 0xF0
 				link_encrypyed = bool(flags & 0x20)
 				link_established = not (flags & 0x40)
 				if _log.isEnabledFor(_DEBUG):
 					sw_present = bool(flags & 0x10)
 					has_payload = bool(flags & 0x80)
-					_log.debug("%s: connection notification: software=%s, encrypted=%s, link=%s, payload=%s",
+					_log.debug("%s: eQuad connection notification: software=%s, encrypted=%s, link=%s, payload=%s",
 								self._device, sw_present, link_encrypyed, link_established, has_payload)
 				self[ENCRYPTED] = link_encrypyed
 				self._changed(link_established)
