@@ -4,7 +4,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from gi.repository import Gtk, Gdk, GObject
+from gi.repository import Gtk, Gdk, GObject, GLib
 
 from logitech.unifying_receiver import status as _status
 from logitech.unifying_receiver.common import NamedInts as _NamedInts
@@ -30,10 +30,23 @@ _COLUMN_TYPES = (GObject.TYPE_PYOBJECT, bool, str, str, str)
 #
 #
 
-def _new_button(label, icon_name=None):
-	b = Gtk.Button(label)
+def _new_button(label, icon_name=None, icon_size=Gtk.IconSize.BUTTON, tooltip=None, toggle=False):
+	if toggle:
+		b = Gtk.ToggleButton()
+	else:
+		b = Gtk.Button(label) if label else Gtk.Button()
+
 	if icon_name:
-		b.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.BUTTON))
+		image = Gtk.Image.new_from_icon_name(icon_name, icon_size)
+		b.set_image(image)
+
+	if tooltip:
+		b.set_tooltip_text(tooltip)
+
+	if not label and icon_size < Gtk.IconSize.BUTTON:
+		b.set_relief(Gtk.ReliefStyle.NONE)
+		b.set_focus_on_click(False)
+
 	return b
 
 
@@ -254,20 +267,35 @@ def _new_button(label, icon_name=None):
 # 	return frame
 
 
+def _find_selected_device(window):
+	selection = window._tree.get_selection()
+	model, iter = selection.get_selected()
+	return model.get_value(iter, _COLUMN.OBJ) if iter else None
+
+
+_UNIFYING_RECEIVER_TEXT = (
+		'No paired devices.\n\n<small>Up to %d devices can be paired\nto this receiver.</small>',
+		'%d paired device(s).\n\n<small>Up to %d devices can be paired\nto this receiver.</small>',
+	)
+_NANO_RECEIVER_TEXT = (
+	'No paired device.\n\n<small> \n </small>',
+	' \n\n<small>Only one device can be paired\nto this receiver.</small>',
+	)
+
 def _update_receiver_panel(receiver, info_panel, full=False):
 	p = info_panel._receiver
 
 	devices_count = len(receiver)
 	if receiver.max_devices > 1:
 		if devices_count == 0:
-			p._count.set_markup('No paired devices.\n\n<small>Up to %d devices can be paired\nto this receiver.</small>' % receiver.max_devices)
+			p._count.set_markup(_UNIFYING_RECEIVER_TEXT[0] % receiver.max_devices)
 		else:
-			p._count.set_markup('%d paired device(s).\n\n<small>Up to %d devices can be paired\nto this receiver.</small>' % (devices_count, receiver.max_devices))
+			p._count.set_markup(_UNIFYING_RECEIVER_TEXT[1] % (devices_count, receiver.max_devices))
 	else:
 		if devices_count == 0:
-			p._count.set_text('No paired device.\n\n<small> \n </small>')
+			p._count.set_text(_NANO_RECEIVER_TEXT[0])
 		else:
-			p._count.set_markup(' \n\n<small>Only one device can be paired\nto this receiver.</small>')
+			p._count.set_markup(_NANO_RECEIVER_TEXT[1])
 
 	if receiver.status.lock_open:
 		p._scanning.set_visible(True)
@@ -338,8 +366,15 @@ def _update_info_panel(device, window, full=False):
 	p._title.set_sensitive(active)
 	p._icon.set_from_icon_name(_icons.device_icon_name(device.name, device.kind), Gtk.IconSize.DND)
 	p._icon.set_sensitive(active)
-	p._details.set_visible(False)
 
+	if p._details.get_visible():
+		if full:
+			p._buttons._details.set_active(False)
+		else:
+			_show_details(p._buttons._details, window)
+			return
+
+	p._details.set_visible(False)
 	if device.kind is None:
 		p._device.set_visible(False)
 		_update_receiver_panel(device, p, full)
@@ -356,12 +391,45 @@ def _update_info_panel(device, window, full=False):
 def _device_selected(selection, window):
 	model, iter = selection.get_selected()
 	device = model.get_value(iter, _COLUMN.OBJ) if iter else None
-	print ("selected", device)
+	# print ("selected", device)
 	_update_info_panel(device, window, True)
 
 
-def _toggle_details(action):
-	pass
+def _show_details(button, window):
+	visible = button.get_active()
+	device = _find_selected_device(window)
+
+	if visible:
+		window._info._receiver.set_visible(False)
+		window._info._device.set_visible(False)
+
+		window._info._details._text.set_markup('<small>reading...</small>')
+		window._info._details.set_visible(True)
+
+		def _update_details_text(label, device):
+			if device.kind is None:
+				items = [('Path', device.path), ('Serial', device.serial)] + \
+						[(fw.kind, fw.version) for fw in device.firmware]
+			else:
+				items = [None, None, None, None, None, None, None, None]
+				hid = device.protocol
+				items[0] = ('Protocol', 'HID++ %1.1f' % hid if hid else 'unknown')
+				if device.polling_rate is not None:
+					items[1] = ('Polling rate', '%d ms' % device.polling_rate)
+				items[2] = ('Wireless PID', device.wpid)
+				items[3] = ('Serial', device.serial)
+				firmware = device.firmware
+				if firmware:
+					items[4:] = [(fw.kind, (fw.name + ' ' + fw.version).strip()) for fw in firmware]
+
+			label.set_markup('<small><tt>%s</tt></small>' % '\n'.join('%-15s%s' % i for i in items if i))
+
+		GLib.idle_add(_update_details_text, window._info._details._text, device)
+
+	else:
+		window._info._details.set_visible(False)
+		_update_info_panel(device, window, True)
+
 
 #
 # create UI layout
@@ -416,48 +484,47 @@ def _create_device_panel():
 	p._lux = _status_line('Lighting')
 	p.pack_start(p._lux, False, False, 0)
 
-	# p._insecure = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 8)
-	# p._insecure.pack_start(Gtk.Label(''), True, True, 0)
-	# p._insecure.pack_start(Gtk.Image().new_from_icon_name('dialog-warning', Gtk.IconSize.MENU), False, False, 0)
-	# insecure_label = Gtk.Label()
-	# insecure_label.set_markup('<small>The wireless link is not encrypted!</small>')
-	# p._insecure.pack_start(insecure_label, False, False, 0)
-	# p._insecure.set_tooltip_text('The wireless link between this device and its receiver is not encrypted.\n'
-	# 							'\n'
-	# 							'For pointing devices (mice, trackballs, trackpads), this is a minor security issue.\n'
-	# 							'\n'
-	# 							'It is, however, a major security issue for text-input devices (keyboards, numpads),\n'
-	# 							'because typed text can be sniffed inconspicuously by 3rd parties within range.')
-	# p.pack_start(p._insecure, False, False, 0)
+	p._config = Gtk.Box.new(Gtk.Orientation.VERTICAL, 4)
+	p.pack_end(p._config, False, False, 0)
 
 	return p
 
 
-def _create_buttons_box():
+def _create_details_panel(window):
+	p = Gtk.Frame()
+	p.set_border_width(32)
+	p.set_shadow_type(Gtk.ShadowType.ETCHED_OUT)
+
+	p._text = Gtk.Label()
+	p._text.set_alignment(0.5, 0.5)
+	p._text.set_selectable(True)
+	p.add(p._text)
+
+	return p
+
+
+def _create_buttons_box(window):
 	bb = Gtk.ButtonBox(Gtk.Orientation.HORIZONTAL)
 	bb.set_layout(Gtk.ButtonBoxStyle.END)
 
-	toolbar = Gtk.Toolbar()
-	toolbar.set_style(Gtk.ToolbarStyle.ICONS)
-	toolbar.set_icon_size(Gtk.IconSize.MENU)
-	toolbar.set_show_arrow(False)
+	bb._details = _new_button(None, 'dialog-information', Gtk.IconSize.SMALL_TOOLBAR, 'Show Details', True)
+	bb._details.connect('clicked', _show_details, window)
+	bb.add(bb._details)
+	bb.set_child_secondary(bb._details, True)
+	bb.set_child_non_homogeneous(bb._details, True)
 
-	bb._details = _action.make_toggle('dialog-information', 'Details', _toggle_details)
-	toolbar.insert(bb._details.create_tool_item(), 0)
+	INSECURE_TOOLTIP = ('The wireless link between this device and its receiver is not encrypted.\n'
+						'\n'
+						'For pointing devices (mice, trackballs, trackpads), this is a minor security issue.\n'
+						'\n'
+						'It is, however, a major security issue for text-input devices (keyboards, numpads),\n'
+						'because typed text can be sniffed inconspicuously by 3rd parties within range.')
 
-	bb._insecure = Gtk.ToolItem.new() #  Gtk.Image().new_from_icon_name('dialog-warning', Gtk.IconSize.MENU)
-	bb._insecure.set_is_important(True)
-	bb._insecure.add(Gtk.Image().new_from_icon_name('dialog-warning', Gtk.IconSize.MENU))
-	bb._insecure.set_tooltip_text('The wireless link between this device and its receiver is not encrypted.\n'
-							'\n'
-							'For pointing devices (mice, trackballs, trackpads), this is a minor security issue.\n'
-							'\n'
-							'It is, however, a major security issue for text-input devices (keyboards, numpads),\n'
-							'because typed text can be sniffed inconspicuously by 3rd parties within range.')
-	toolbar.add(bb._insecure)
-
-	bb.add(toolbar)
-	bb.set_child_secondary(toolbar, True)
+	bb._insecure = Gtk.Image().new_from_icon_name('dialog-warning', Gtk.IconSize.SMALL_TOOLBAR)
+	bb._insecure.set_tooltip_text(INSECURE_TOOLTIP)
+	bb.add(bb._insecure)
+	bb.set_child_secondary(bb._insecure, True)
+	bb.set_child_non_homogeneous(bb._insecure, True)
 
 	bb._pair = _new_button('Pair new device', 'list-add')
 	bb.add(bb._pair)
@@ -468,8 +535,8 @@ def _create_buttons_box():
 	return bb
 
 
-def _create_info_panel():
-	panel = Gtk.VBox(homogeneous=False, spacing=4)
+def _create_info_panel(window):
+	panel = Gtk.Box.new(Gtk.Orientation.VERTICAL, 4)
 
 	panel._title = Gtk.Label(' ')
 	panel._title.set_alignment(0, 0.5)
@@ -482,8 +549,7 @@ def _create_info_panel():
 
 	panel.pack_start(Gtk.Separator.new(Gtk.Orientation.HORIZONTAL), False, False, 0)  # spacer
 
-	panel._details = Gtk.Label()
-	panel._details.set_padding(10, 10)
+	panel._details = _create_details_panel(window)
 	panel.pack_start(panel._details, True, True, 0)
 
 	panel._receiver = _create_receiver_panel()
@@ -494,7 +560,7 @@ def _create_info_panel():
 
 	panel.pack_start(Gtk.Separator.new(Gtk.Orientation.HORIZONTAL), False, False, 0)  # spacer
 
-	panel._buttons = _create_buttons_box()
+	panel._buttons = _create_buttons_box(window)
 	panel.pack_end(panel._buttons, False, False, 0)
 
 	panel.show_all()
@@ -547,7 +613,7 @@ def _create_window_layout(window):
 	assert window._tree.get_selection().get_mode() == Gtk.SelectionMode.SINGLE
 	window._tree.get_selection().connect('changed', _device_selected, window)
 
-	window._info = _create_info_panel()
+	window._info = _create_info_panel(window)
 
 	window._empty = Gtk.Label()
 	window._empty.set_markup('<small>Select a device</small>')
@@ -795,7 +861,5 @@ def update(window, receiver, device=None):
 		model.set_value(iter, _COLUMN.STATUS_ICON, '' if battery_level is None else battery_icon_name)
 
 	window._tree.expand_all()
-	model, iter = window._tree.get_selection().get_selected()
-	selected_device = model.get_value(iter, _COLUMN.OBJ) if iter else None
-	if device == selected_device:
+	if device == _find_selected_device(window):
 		_update_info_panel(device, window)
