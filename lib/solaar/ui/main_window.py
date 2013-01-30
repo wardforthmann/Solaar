@@ -347,6 +347,8 @@ def _update_device_panel(device, info_panel, full=False):
 		p._lux._text.set_text('%d lux' % light_level)
 		p._lux._text.set_visible(True)
 
+	GLib.idle_add(_config_panel.update, p._config, device, active)
+
 	b = info_panel._buttons
 	b._insecure.set_visible(device.status.get(_status.ENCRYPTED) == False)
 	b._pair.set_visible(False)
@@ -463,7 +465,7 @@ def _create_device_panel():
 
 		b._label = Gtk.Label(label_text)
 		b._label.set_alignment(0, 0.5)
-		b._label.set_size_request(120, 10)
+		b._label.set_size_request(170, 10)
 		b.pack_start(b._label, False, False, 0)
 
 		b._icon = Gtk.Image()
@@ -474,7 +476,7 @@ def _create_device_panel():
 		b.pack_start(b._text, True, True, 0)
 
 		# spacer
-		b.pack_start(Gtk.Label(), False, False, 0)
+		# b.pack_start(Gtk.Label(), False, False, 0)
 
 		return b
 
@@ -484,8 +486,10 @@ def _create_device_panel():
 	p._lux = _status_line('Lighting')
 	p.pack_start(p._lux, False, False, 0)
 
-	p._config = Gtk.Box.new(Gtk.Orientation.VERTICAL, 4)
-	p.pack_end(p._config, False, False, 0)
+	p.pack_start(Gtk.Label(' '), False, False, 0) # spacer
+
+	p._config = _config_panel.create()
+	p.pack_end(p._config, False, False, 8)
 
 	return p
 

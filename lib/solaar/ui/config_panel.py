@@ -16,11 +16,11 @@ try:
 	from Queue import Queue as _Queue
 except ImportError:
 	from queue import Queue as _Queue
-_apply_queue = _Queue(4)
+_apply_queue = _Queue(8)
 
 def _process_apply_queue():
 	def _write_start(sbox):
-		_, failed, spinner, control = sbox.get_children()
+		_, control, failed, spinner = sbox.get_children()
 		control.set_sensitive(False)
 		failed.set_visible(False)
 		spinner.set_visible(True)
@@ -35,8 +35,8 @@ def _process_apply_queue():
 			GObject.idle_add(_write_start, sbox, priority=0)
 			value = setting.write(value)
 		elif task[0] == 'read':
-			_, setting, force_read, sbox = task
-			value = setting.read(not force_read)
+			_, setting, sbox = task
+			value = setting.read()
 		GObject.idle_add(_update_setting_item, sbox, value, priority=99)
 
 from threading import Thread as _Thread
@@ -62,74 +62,80 @@ def _combo_notify(cbbox, setting, spinner):
 		_apply_queue.put(('write', setting, cbbox.get_active_id(), cbbox.get_parent()))
 
 
-# def _scale_notify(scale, setting, spinner):
-# 	_apply_queue.put(('write', setting, scale.get_value(), scale.get_parent()))
+def _scale_notify(scale, setting, spinner):
+	_apply_queue.put(('write', setting, scale.get_value(), scale.get_parent()))
 
 
-# def _snap_to_markers(scale, scroll, value, setting):
-# 	value = int(value)
-# 	candidate = None
-# 	delta = 0xFFFFFFFF
-# 	for c in setting.choices:
-# 		d = abs(value - int(c))
-# 		if d < delta:
-# 			candidate = c
-# 			delta = d
+def _snap_to_markers(scale, scroll, value, setting):
+	value = int(value)
+	candidate = None
+	delta = 0xFFFFFFFF
+	for c in setting.choices:
+		d = abs(value - int(c))
+		if d < delta:
+			candidate = c
+			delta = d
 
-# 	assert candidate is not None
-# 	scale.set_value(int(candidate))
-# 	return True
+	assert candidate is not None
+	scale.set_value(int(candidate))
+	return True
 
 
-def _add_settings(box, device):
-	for s in device.settings:
-		sbox = Gtk.HBox(homogeneous=False, spacing=8)
-		sbox.pack_start(Gtk.Label(s.label), False, False, 0)
+def _create_sbox(s):
+	sbox = Gtk.HBox(homogeneous=False, spacing=8)
+	if s.description:
+		sbox.set_tooltip_text(s.description)
 
-		spinner = Gtk.Spinner()
-		spinner.set_tooltip_text('Working...')
+	label = Gtk.Label(s.label)
+	label.set_size_request(170, 10)
+	label.set_alignment(0, 0.5)
+	sbox.pack_start(label, False, False, 0)
 
-		failed = Gtk.Image.new_from_icon_name('dialog-warning', Gtk.IconSize.SMALL_TOOLBAR)
-		failed.set_tooltip_text('Failed to read value from the device.')
+	spinner = Gtk.Spinner()
+	spinner.set_tooltip_text('Working...')
 
-		if s.kind == _settings.KIND.toggle:
-			control = Gtk.Switch()
-			control.connect('notify::active', _switch_notify, s, spinner)
-		elif s.kind == _settings.KIND.choice:
-			control = Gtk.ComboBoxText()
-			for entry in s.choices:
-				control.append(str(entry), str(entry))
-			control.connect('changed', _combo_notify, s, spinner)
-		# elif s.kind == _settings.KIND.range:
-		# 	first, second = s.choices[:2]
-		# 	last = s.choices[-1:][0]
-		# 	control = Gtk.HScale.new_with_range(first, last, second - first)
-		# 	control.set_draw_value(False)
-		# 	control.set_has_origin(False)
-		# 	for entry in s.choices:
-		# 		control.add_mark(int(entry), Gtk.PositionType.TOP, str(entry))
-		# 	control.connect('change-value', _snap_to_markers, s)
-		# 	control.connect('value-changed', _scale_notify, s, spinner)
-		else:
-			raise NotImplemented
+	stretch = False
+	if s.kind == _settings.KIND.toggle:
+		control = Gtk.Switch()
+		control.connect('notify::active', _switch_notify, s, spinner)
+	elif s.kind == _settings.KIND.choice:
+		control = Gtk.ComboBoxText()
+		for entry in s.choices:
+			control.append(str(entry), str(entry))
+		control.connect('changed', _combo_notify, s, spinner)
+	elif s.kind == _settings.KIND.range:
+		choices = s.choices[:]
+		first, second = choices[:2]
+		last = choices[-1]
+		control = Gtk.HScale.new_with_range(first, last, second - first)
+		control.set_draw_value(False)
+		control.set_has_origin(False)
+		for entry in s.choices:
+			control.add_mark(int(entry), Gtk.PositionType.TOP, str(entry))
+		control.connect('change-value', _snap_to_markers, s)
+		control.connect('value-changed', _scale_notify, s, spinner)
+		stretch = True
+	else:
+		raise NotImplemented
 
-		control.set_sensitive(False)  # the first read will enable it
-		sbox.pack_end(control, False, False, 0)
-		sbox.pack_end(spinner, False, False, 0)
-		sbox.pack_end(failed, False, False, 0)
+	control.set_name(s.name)
+	control.set_sensitive(False)  # the first read will enable it
+	sbox.pack_start(control, stretch, stretch, 0)
 
-		if s.description:
-			sbox.set_tooltip_text(s.description)
+	failed = Gtk.Image.new_from_icon_name('dialog-warning', Gtk.IconSize.SMALL_TOOLBAR)
+	failed.set_tooltip_text('Failed to read value from the device.')
+	sbox.pack_start(failed, False, False, 0)
 
-		sbox.show_all()
-		spinner.start()  # the first read will stop it
-		failed.set_visible(False)
-		box.pack_start(sbox, False, False, 0)
-		yield sbox
+	sbox.pack_start(spinner, False, False, 0)
+
+	sbox.show_all()
+	spinner.start()  # the first read will stop it
+	failed.set_visible(False)
+	return sbox
 
 
 def _update_setting_item(sbox, value):
-	_, failed, spinner, control = sbox.get_children()
+	_, control, failed, spinner = sbox.get_children()
 	spinner.set_visible(False)
 	spinner.stop()
 
@@ -144,8 +150,8 @@ def _update_setting_item(sbox, value):
 		control.set_active(value)
 	elif isinstance(control, Gtk.ComboBoxText):
 		control.set_active_id(str(value))
-	# elif isinstance(control, Gtk.Scale):
-	# 	control.set_value(int(value))
+	elif isinstance(control, Gtk.Scale):
+		control.set_value(int(value))
 	else:
 		raise NotImplemented
 	control.set_sensitive(True)
@@ -155,48 +161,31 @@ def _update_setting_item(sbox, value):
 #
 
 def create():
-	b = Gtk.VBox(homogeneous=False, spacing=4)
-	b.set_property('margin', 8)
-	return b
+	box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 8)
+	box._items = {}
+	return box
 
 
-def update(frame):
-	box = frame._config_box
+def update(box, device, device_active):
 	assert box
-	device = frame._device
+	assert device
 
-	if device is None:
-		# remove all settings widgets
-		# if another device gets paired here, it will add its own widgets
-		_remove_children(box)
-		return
+	# if not box.get_visible():
+	# 	# no point in doing this right now, is there?
+	# 	return
 
-	if not box.get_visible():
-		# no point in doing this right now, is there?
-		return
-
-	if not device.settings:
-		# nothing to do here
-		return
-
-	force_read = False
-	items = box.get_children()
-	if len(device.settings) != len(items):
-		_remove_children(box)
-		if device.status:
-			items = list(_add_settings(box, device))
-			assert len(device.settings) == len(items)
-			force_read = True
-
-	device_active = bool(device.status)
 	# if the device just became active, re-read the settings
-	force_read |= device_active and not box.get_sensitive()
-	box.set_sensitive(device_active)
-	if device_active:
-		for sbox, s in zip(items, device.settings):
-			_apply_queue.put(('read', s, force_read, sbox))
+	box.foreach(lambda x, s: x.set_visible(x.get_name() == s), device.serial)
 
+	for s in device.settings:
+		k = device.serial + '_' + s.name
+		if k not in box._items:
+			sbox = _create_sbox(s)
+			sbox.set_name(device.serial)
+			box._items[k] = sbox
+			box.pack_start(sbox, False, False, 0)
+		else:
+			sbox = box._items[k]
 
-def _remove_children(container):
-	container.foreach(lambda x, _: container.remove(x), None)
-
+		if device_active:
+			_apply_queue.put(('read', s, sbox))
