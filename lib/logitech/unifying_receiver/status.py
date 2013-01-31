@@ -168,10 +168,10 @@ class DeviceStatus(dict):
 				return
 
 			# read these from the device in case they haven't been read already
-			d.protocol, d.serial, d.firmware
+			# d.protocol, d.serial, d.firmware
 
-			if BATTERY_LEVEL not in self:
-				self.read_battery(timestamp)
+			# if BATTERY_LEVEL not in self:
+			self.read_battery(timestamp)
 
 			# make sure we know all the features of the device
 			if d.features:
@@ -250,7 +250,7 @@ class DeviceStatus(dict):
 			else:
 				_log.warn("%s: connection notification with unknown protocol %02X: %s", self._device.number, n.address, n)
 
-			if self._active:
+			if self._active:  # and BATTERY_LEVEL not in self:
 				self.read_battery()
 
 			return True

@@ -54,7 +54,7 @@ class ReceiverListener(_listener.EventsListener):
 		self._status_changed(self.receiver, _status.ALERT.LOW)
 
 	def has_stopped(self):
-		_log.info("%s: notifications listener has stopped", self.recever)
+		_log.info("%s: notifications listener has stopped", self.receiver)
 		if self.receiver:
 			self.receiver.enable_notifications(False)
 			self.receiver.close()
@@ -109,7 +109,7 @@ class ReceiverListener(_listener.EventsListener):
 
 	def _notifications_handler(self, n):
 		assert self.receiver
-		_log.debug("%s: handling %s", self.receiver, n)
+		# _log.debug("%s: handling %s", self.receiver, n)
 		if n.devnumber == 0xFF:
 			# a receiver notification
 			if self.receiver.status is not None:

@@ -175,7 +175,6 @@ class EventsListener(_threading.Thread):
 						last_tick = now
 						self.tick(now)
 
-		self.receiver.handle._listener = None
 		del self._queued_notifications
 		self.has_stopped()
 

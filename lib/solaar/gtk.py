@@ -95,6 +95,8 @@ def _run(args):
 			GLib.idle_add(window.present)
 		if window:
 			GLib.idle_add(ui.main_window.update, window, receiver, device)
+			if device and alert & status.ALERT.MED:
+				GLib.idle_add(ui.main_window.select, window, device)
 		if icon:
 			GLib.idle_add(ui.status_icon.update, icon, receiver, device)
 
@@ -103,7 +105,7 @@ def _run(args):
 			if device is None or alert & status.ALERT.LOW:
 				GLib.idle_add(ui.notify.show, device or receiver, reason)
 
-	GLib.timeout_add(50, _base.notify_on_receivers, receivers_events)
+	GLib.timeout_add(10, _base.notify_on_receivers, receivers_events)
 	Gtk.main()
 
 	[l.stop() for l in listeners.values() if l]
