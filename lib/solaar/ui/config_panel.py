@@ -19,7 +19,7 @@ except ImportError:
 _apply_queue = _Queue(8)
 
 def _process_apply_queue():
-	def _write_start(sbox):
+	def _io_start(sbox):
 		_, control, failed, spinner = sbox.get_children()
 		control.set_sensitive(False)
 		failed.set_visible(False)
@@ -32,10 +32,11 @@ def _process_apply_queue():
 		# print ("task", *task)
 		if task[0] == 'write':
 			_, setting, value, sbox = task
-			GObject.idle_add(_write_start, sbox, priority=0)
+			GObject.idle_add(_io_start, sbox, priority=0)
 			value = setting.write(value)
 		elif task[0] == 'read':
 			_, setting, sbox = task
+			GObject.idle_add(_io_start, sbox, priority=0)
 			value = setting.read()
 		GObject.idle_add(_update_setting_item, sbox, value, priority=99)
 
@@ -129,7 +130,7 @@ def _create_sbox(s):
 	sbox.pack_start(spinner, False, False, 0)
 
 	sbox.show_all()
-	spinner.start()  # the first read will stop it
+	spinner.set_visible(False)
 	failed.set_visible(False)
 	return sbox
 
@@ -162,6 +163,7 @@ def _update_setting_item(sbox, value):
 
 def create():
 	box = Gtk.Box.new(Gtk.Orientation.VERTICAL, 8)
+	box._last_device = None
 	box._items = {}
 	return box
 
@@ -170,12 +172,15 @@ def update(box, device, device_active):
 	assert box
 	assert device
 
-	# if not box.get_visible():
-	# 	# no point in doing this right now, is there?
-	# 	return
+	if device != box._last_device:
+		box.set_visible(False)
 
 	# if the device just became active, re-read the settings
 	box.foreach(lambda x, s: x.set_visible(x.get_name() == s), device.serial)
+
+	if device != box._last_device:
+		box._last_device = device
+		box.set_visible(True)
 
 	for s in device.settings:
 		k = device.serial + '_' + s.name
