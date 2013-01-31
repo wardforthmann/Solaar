@@ -229,7 +229,7 @@ class DeviceStatus(dict):
 					kind = ord(n.data[:1]) & 0x0F
 					self._device._kind = _hidpp10.DEVICE_KIND[kind]
 				if self._device._wpid is None:
-					self._device._wpid = _strhex(n.data[4:5] + n.data[3:4])
+					self._device._wpid = _strhex(n.data[2:3] + n.data[1:2])
 
 				flags = ord(n.data[:1]) & 0xF0
 				link_encrypyed = bool(flags & 0x20)

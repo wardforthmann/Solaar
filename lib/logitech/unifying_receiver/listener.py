@@ -29,7 +29,7 @@ class ThreadedHandle(object):
 	Closing a ThreadedHandle will close all handles.
 	"""
 
-	__slots__ = ['path', '_local', '_handles']
+	__slots__ = ['path', '_local', '_handles', '_listener']
 
 	def __init__(self, initial_handle, path):
 		assert initial_handle
@@ -38,6 +38,7 @@ class ThreadedHandle(object):
 
 		assert path
 		self.path = path
+		self._listener = None
 		self._local = _threading.local()
 		self._local.handle = initial_handle
 		self._handles = [initial_handle]
@@ -61,7 +62,15 @@ class ThreadedHandle(object):
 			for h in handles:
 				_base.close(h)
 
+	@property
+	def notifications_hook(self):
+		if self._listener:
+			assert isinstance(self._listener, _threading.Thread)
+			if _threading.current_thread() == self._listener:
+				return self._listener._notifications_hook
+
 	def __del__(self):
+		self._listener = None
 		self.close()
 
 	def __index__(self):
@@ -106,21 +115,24 @@ class EventsListener(_threading.Thread):
 	def __init__(self, receiver, notifications_callback):
 		super(EventsListener, self).__init__(name=self.__class__.__name__)
 
+		assert receiver
+		assert receiver.handle
+		assert isinstance(receiver.handle, int)
+		# replace the handle with a threaded one
+		receiver.handle = ThreadedHandle(receiver.handle, receiver.path)
+		receiver.handle._listener = self
+
 		self.daemon = True
 		self._active = False
 
 		self.receiver = receiver
-		self._queued_notifications = _Queue(32)
+		self._queued_notifications = _Queue(16)
 		self._notifications_callback = notifications_callback
 
 		self.tick_period = 0
 
 	def run(self):
 		self._active = True
-
-		# This is necessary because notification packets might be received
-		# during requests made by our callback.
-		_base.notifications_hook = self._notifications_hook
 
 		ihandle = int(self.receiver.handle)
 		_log.info("started with %s (%d)", self.receiver, ihandle)
@@ -148,11 +160,12 @@ class EventsListener(_threading.Thread):
 
 			if n:
 				# if _log.isEnabledFor(_DEBUG):
-				# 	_log.debug("processing %s", n)
+				# 	_log.debug("%s: processing %s", self.receiver, n)
 				try:
 					self._notifications_callback(n)
 				except:
 					_log.exception("processing %s", n)
+
 			elif self.tick_period:
 				idle_reads += 1
 				if idle_reads % _IDLE_READS == 0:
@@ -162,9 +175,8 @@ class EventsListener(_threading.Thread):
 						last_tick = now
 						self.tick(now)
 
-		_base.notifications_hook = None
+		self.receiver.handle._listener = None
 		del self._queued_notifications
-
 		self.has_stopped()
 
 	def stop(self):
@@ -187,7 +199,8 @@ class EventsListener(_threading.Thread):
 	def _notifications_hook(self, n):
 		# Only consider unhandled notifications that were sent from this thread,
 		# i.e. triggered by a callback handling a previous notification.
-		if self._active and _threading.current_thread() == self:
+		assert _threading.current_thread() == self
+		if self._active:  # and _threading.current_thread() == self:
 			if _log.isEnabledFor(_DEBUG):
 				_log.debug("queueing unhandled %s", n)
 			self._queued_notifications.put(n)

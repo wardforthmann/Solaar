@@ -22,7 +22,7 @@ def _look_for_application_icons():
 		solaar_png = _path.join(location, 'icons', 'solaar-mask.png')
 		if _path.exists(solaar_png):
 			_os.environ['XDG_DATA_DIRS'] = location + ':' + data_dirs
-			print ('XDG_DATA_DIRS=%s' % _os.environ['XDG_DATA_DIRS'])
+			# print ('XDG_DATA_DIRS=%s' % _os.environ['XDG_DATA_DIRS'])
 			break
 
 	del _sys

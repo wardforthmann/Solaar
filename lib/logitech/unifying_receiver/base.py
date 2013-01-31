@@ -202,12 +202,11 @@ def _read(handle, timeout):
 		return report_id, devnumber, data[2:]
 
 
-def _skip_incoming(handle):
+def _skip_incoming(handle, ihandle, notifications_hook):
 	"""Read anything already in the input buffer.
 
 	Used by request() and ping() before their write.
 	"""
-	ihandle = int(handle)
 
 	while True:
 		try:
@@ -218,36 +217,21 @@ def _skip_incoming(handle):
 			raise NoReceiver(reason=reason)
 
 		if data:
-			report_id = ord(data[:1])
-			assert (report_id == 0x10 and len(data) == _SHORT_MESSAGE_SIZE or
-					report_id == 0x11 and len(data) == _LONG_MESSAGE_SIZE or
-					report_id == 0x20 and len(data) == _MEDIUM_MESSAGE_SIZE)
-			_unhandled(report_id, ord(data[1:2]), data[2:])
+			if _log.isEnabledFor(_DEBUG):
+				report_id = ord(data[:1])
+				assert (report_id == 0x10 and len(data) == _SHORT_MESSAGE_SIZE or
+						report_id == 0x11 and len(data) == _LONG_MESSAGE_SIZE or
+						report_id == 0x20 and len(data) == _MEDIUM_MESSAGE_SIZE)
+			if notifications_hook:
+				n = make_notification(ord(data[1:2]), data[2:])
+				if n:
+					notifications_hook(n)
 		else:
 			return
 
 #
 #
 #
-
-"""The function that may be called on incoming notifications.
-
-The hook must be a callable accepting one tuple parameter, with the format
-``(<int> devnumber, <bytes[2]> request_id, <bytes> data)``.
-
-This hook will only be called by the request()/ping() functions, when received
-replies do not match the expected request_id. As such, it is not suitable for
-intercepting broadcast notifications from the device (e.g. special keys being
-pressed, battery charge notifications, etc), at least not in a timely manner.
-"""
-notifications_hook = None
-
-def _unhandled(report_id, devnumber, data):
-	"""Deliver a possible notification to the notifications_hook (if any)."""
-	if notifications_hook:
-		n = make_notification(devnumber, data)
-		if n:
-			notifications_hook(n)
 
 def make_notification(devnumber, data):
 	"""Guess if this is a notification (and not just a request reply), and
@@ -266,6 +250,9 @@ _HIDPP_Notification.__str__ = lambda self: 'Notification(%d,%02X,%02X,%s)' % (se
 _HIDPP_Notification.__unicode__ = _HIDPP_Notification.__str__
 del namedtuple
 
+#
+#
+#
 
 def request(handle, devnumber, request_id, *params):
 	"""Makes a feature call to a device and waits for a matching reply.
@@ -298,8 +285,9 @@ def request(handle, devnumber, request_id, *params):
 	# 	_log.debug("(%s) device %d request_id {%04X} params [%s]", handle, devnumber, request_id, _strhex(params))
 	request_data = _pack(b'!H', request_id) + params
 
-	_skip_incoming(handle)
 	ihandle = int(handle)
+	notifications_hook = handle.notifications_hook if hasattr(handle, 'notifications_hook') else None
+	_skip_incoming(handle, ihandle, notifications_hook)
 	write(ihandle, devnumber, request_data)
 
 	while True:
@@ -353,7 +341,10 @@ def request(handle, devnumber, request_id, *params):
 					else:
 						return reply_data[2:]
 
-			_unhandled(report_id, reply_devnumber, reply_data)
+			if notifications_hook:
+				n = make_notification(reply_devnumber, reply_data)
+				if n:
+					notifications_hook(n)
 
 		if delta >= timeout:
 			_log.warn("timeout on device %d request {%04X} params[%s]", devnumber, request_id, _strhex(params))
@@ -378,8 +369,9 @@ def ping(handle, devnumber):
 	request_id = 0x0018 | _random_bits(3)
 	request_data = _pack(b'!HBBB', request_id, 0, 0, _random_bits(8))
 
-	_skip_incoming(handle)
 	ihandle = int(handle)
+	notifications_hook = handle.notifications_hook if hasattr(handle, 'notifications_hook') else None
+	_skip_incoming(handle, ihandle, notifications_hook)
 	write(ihandle, devnumber, request_data)
 
 	while True:
@@ -388,15 +380,15 @@ def ping(handle, devnumber):
 		delta = _timestamp() - now
 
 		if reply:
-			report_id, number, data = reply
-			if number == devnumber:
-				if data[:2] == request_data[:2] and data[4:5] == request_data[-1:]:
+			report_id, reply_devnumber, reply_data = reply
+			if reply_devnumber == devnumber:
+				if reply_data[:2] == request_data[:2] and reply_data[4:5] == request_data[-1:]:
 					# HID++ 2.0+ device, currently connected
-					return ord(data[2:3]) + ord(data[3:4]) / 10.0
+					return ord(reply_data[2:3]) + ord(reply_data[3:4]) / 10.0
 
-				if report_id == 0x10 and data[:1] == b'\x8F' and data[1:3] == request_data[:2]:
-					assert data[-1:] == b'\x00'
-					error = ord(data[3:4])
+				if report_id == 0x10 and reply_data[:1] == b'\x8F' and reply_data[1:3] == request_data[:2]:
+					assert reply_data[-1:] == b'\x00'
+					error = ord(reply_data[3:4])
 
 					if error == _hidpp10.ERROR.invalid_SubID__command: # a valid reply from a HID++ 1.0 device
 						return 1.0
@@ -409,7 +401,10 @@ def ping(handle, devnumber):
 						_log.error("(%s) device %d error on ping request: unknown device", handle, devnumber)
 						raise NoSuchDevice(number=devnumber, request=request_id)
 
-			_unhandled(report_id, number, data)
+			if notifications_hook:
+				n = make_notification(reply_devnumber, reply_data)
+				if n:
+					notifications_hook(n)
 
 		if delta >= _PING_TIMEOUT:
 			_log.warn("(%s) timeout on device %d ping", handle, devnumber)

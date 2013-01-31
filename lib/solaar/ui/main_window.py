@@ -26,6 +26,14 @@ _FALLBACK_ICON = 'preferences-desktop-peripherals'
 _COLUMN = _NamedInts(OBJ=0, ACTIVE=1, NAME=2, ICON=3, STATUS_ICON=4)
 _COLUMN_TYPES = (GObject.TYPE_PYOBJECT, bool, str, str, str)
 
+_TOOLTIP_LINK_SECURE = 'The wireless link between this device and its receiver is encrypted.'
+_TOOLTIP_LINK_INSECURE = ('The wireless link between this device and its receiver is not encrypted.\n'
+						'\n'
+						'For pointing devices (mice, trackballs, trackpads), this is a minor security issue.\n'
+						'\n'
+						'It is, however, a major security issue for text-input devices (keyboards, numpads),\n'
+						'because typed text can be sniffed inconspicuously by 3rd parties within range.')
+
 #
 #
 #
@@ -309,19 +317,16 @@ def _update_receiver_panel(receiver, info_panel, full=False):
 		p._spinner.set_visible(False)
 
 	b = info_panel._buttons
-	b._insecure.set_visible(False)
+	# b._insecure.set_visible(False)
 	b._unpair.set_visible(False)
 	b._pair.set_sensitive(devices_count < receiver.max_devices and not receiver.status.lock_open)
 	b._pair.set_visible(True)
 
 
 def _update_device_panel(device, info_panel, full=False):
-	p = info_panel._device
-
 	active = bool(device.status)
-
+	p = info_panel._device
 	p.set_sensitive(active)
-	# p._insecure.set_visible(device.status.get(_status.ENCRYPTED) == False)
 
 	battery_level = device.status.get(_status.BATTERY_LEVEL)
 	if battery_level is None:
@@ -335,22 +340,34 @@ def _update_device_panel(device, info_panel, full=False):
 		p._battery._text.set_text('%d%%' % battery_level)
 		p._battery._text.set_sensitive(True)
 
-	light_level = device.status.get(_status.LIGHT_LEVEL)
-	if light_level is None:
-		p._lux._label.set_visible(False)
-		p._lux._icon.set_visible(False)
-		p._lux._text.set_visible(False)
+	if active:
+		not_secure = device.status.get(_status.ENCRYPTED) == False
+		if not_secure:
+			p._secure._text.set_text('not encrypted')
+			p._secure._icon.set_from_icon_name('security-low', Gtk.IconSize.LARGE_TOOLBAR)
+			p._secure.set_tooltip_text(_TOOLTIP_LINK_INSECURE)
+		else:
+			p._secure._text.set_text('encrypted')
+			p._secure._icon.set_from_icon_name('security-high', Gtk.IconSize.LARGE_TOOLBAR)
+			p._secure.set_tooltip_text(_TOOLTIP_LINK_SECURE)
+		p._secure.set_visible(True)
 	else:
-		p._lux._label.set_visible(True)
-		p._lux._icon.set_from_icon_name(_icons.lux(light_level), Gtk.IconSize.LARGE_TOOLBAR)
-		p._lux._icon.set_visible(True)
-		p._lux._text.set_text('%d lux' % light_level)
-		p._lux._text.set_visible(True)
+		p._secure.set_visible(False)
+
+	if active:
+		light_level = device.status.get(_status.LIGHT_LEVEL)
+		if light_level is None:
+			p._lux.set_visible(False)
+		else:
+			p._lux._icon.set_from_icon_name(_icons.lux(light_level), Gtk.IconSize.LARGE_TOOLBAR)
+			p._lux._text.set_text('%d lux' % light_level)
+			p._lux.set_visible(True)
+	else:
+		p._lux.set_visible(False)
 
 	GLib.idle_add(_config_panel.update, p._config, device, active)
 
 	b = info_panel._buttons
-	b._insecure.set_visible(device.status.get(_status.ENCRYPTED) == False)
 	b._pair.set_visible(False)
 	b._unpair.set_visible(True)
 
@@ -475,9 +492,6 @@ def _create_device_panel():
 		b._text.set_alignment(0, 0.5)
 		b.pack_start(b._text, True, True, 0)
 
-		# spacer
-		# b.pack_start(Gtk.Label(), False, False, 0)
-
 		return b
 
 	p._battery = _status_line('Battery')
@@ -486,7 +500,9 @@ def _create_device_panel():
 	p._lux = _status_line('Lighting')
 	p.pack_start(p._lux, False, False, 0)
 
-	p.pack_start(Gtk.Label(' '), False, False, 0) # spacer
+	p._secure = _status_line('Wireless Link')
+	p._secure._icon.set_from_icon_name('dialog-warning', Gtk.IconSize.LARGE_TOOLBAR)
+	p.pack_start(p._secure, False, False, 0)
 
 	p._config = _config_panel.create()
 	p.pack_end(p._config, False, False, 8)
@@ -516,19 +532,6 @@ def _create_buttons_box(window):
 	bb.add(bb._details)
 	bb.set_child_secondary(bb._details, True)
 	bb.set_child_non_homogeneous(bb._details, True)
-
-	INSECURE_TOOLTIP = ('The wireless link between this device and its receiver is not encrypted.\n'
-						'\n'
-						'For pointing devices (mice, trackballs, trackpads), this is a minor security issue.\n'
-						'\n'
-						'It is, however, a major security issue for text-input devices (keyboards, numpads),\n'
-						'because typed text can be sniffed inconspicuously by 3rd parties within range.')
-
-	bb._insecure = Gtk.Image().new_from_icon_name('dialog-warning', Gtk.IconSize.SMALL_TOOLBAR)
-	bb._insecure.set_tooltip_text(INSECURE_TOOLTIP)
-	bb.add(bb._insecure)
-	bb.set_child_secondary(bb._insecure, True)
-	bb.set_child_non_homogeneous(bb._insecure, True)
 
 	bb._pair = _new_button('Pair new device', 'list-add')
 	bb.add(bb._pair)

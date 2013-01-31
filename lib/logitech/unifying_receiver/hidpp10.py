@@ -41,7 +41,7 @@ POWER_SWITCH_LOCATION = _NamedInts(
 NOTIFICATION_FLAG = _NamedInts(
 				battery_status=0x100000,
 				wireless=0x000100,
-				software_present=0x0000800)
+				software_present=0x000800)
 
 ERROR = _NamedInts(
 				invalid_SubID__command=0x01,
@@ -118,6 +118,13 @@ def get_firmware(device):
 			fw_version += '.B' + _strhex(reply[1:3])
 		fw = _FirmwareInfo(FIRMWARE_KIND.Firmware, '', fw_version, None)
 		firmware.append(fw)
+
+	if device.kind is None and device.max_devices == 1:
+		# Nano receiver
+		return firmware
+	if device.kind is not None and not device._unifying:
+		# Nano device
+		return firmware
 
 	reply = device.request(0x81F1, 0x04)
 	if reply:

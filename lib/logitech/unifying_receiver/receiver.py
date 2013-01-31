@@ -29,10 +29,10 @@ class PairedDevice(object):
 	def __init__(self, receiver, number):
 		assert receiver
 		self.receiver = _proxy(receiver)
-		assert number > 0 and number <= MAX_PAIRED_DEVICES
+		assert number > 0 and number <= receiver.max_devices
 		self.number = number
 
-		self._unifying = None
+		self._unifying = receiver.max_devices > 1
 		self._protocol = None
 		self._wpid = None
 		self._power_switch = None
@@ -44,7 +44,7 @@ class PairedDevice(object):
 		self._firmware = None
 		self._keys = None
 
-		self.features = _hidpp20.FeaturesArray(self)
+		self.features = _hidpp20.FeaturesArray(self) if self._unifying else None
 		self._registers = None
 		self._settings = None
 
@@ -58,15 +58,18 @@ class PairedDevice(object):
 	@property
 	def wpid(self):
 		if self._wpid is None:
-			pair_info = self.receiver.request(0x83B5, 0x20 + self.number - 1)
-			if pair_info:
-				self._unifying = True
-				self._wpid = _strhex(pair_info[3:5])
-				if self._kind is None:
-					kind = ord(pair_info[7:8]) & 0x0F
-					self._kind = _hidpp10.DEVICE_KIND[kind]
-				if self._polling_rate is None:
-					self._polling_rate = ord(pair_info[2:3])
+			if self._unifying:
+				pair_info = self.receiver.request(0x83B5, 0x20 + self.number - 1)
+				if pair_info:
+					self._wpid = _strhex(pair_info[3:5])
+					if self._kind is None:
+						kind = ord(pair_info[7:8]) & 0x0F
+						self._kind = _hidpp10.DEVICE_KIND[kind]
+					if self._polling_rate is None:
+						self._polling_rate = ord(pair_info[2:3])
+			# else:
+			# 	device_info = self.receiver.request(0x83B5, 0x04)
+			# 	self.wpid = _strhex(device_info[3:5])
 		return self._wpid
 
 	@property
@@ -77,7 +80,7 @@ class PairedDevice(object):
 
 	@property
 	def power_switch_location(self):
-		if self._power_switch is None:
+		if self._power_switch is None and self._unifying:
 			ps = self.receiver.request(0x83B5, 0x30 + self.number - 1)
 			if ps:
 				ps = ord(ps[9:10]) & 0x0F
@@ -86,7 +89,7 @@ class PairedDevice(object):
 
 	@property
 	def codename(self):
-		if self._codename is None:
+		if self._codename is None and self._unifying:
 			codename = self.receiver.request(0x83B5, 0x40 + self.number - 1)
 			if codename:
 				self._codename = codename[2:].rstrip(b'\x00').decode('utf-8')
@@ -95,7 +98,7 @@ class PairedDevice(object):
 
 	@property
 	def name(self):
-		if self._name is None:
+		if self._name is None and self._unifying:
 			if self.codename in _descriptors.DEVICES:
 				self._name, self._kind = _descriptors.DEVICES[self._codename][:2]
 			elif self.protocol >= 2.0:
@@ -104,7 +107,7 @@ class PairedDevice(object):
 
 	@property
 	def kind(self):
-		if self._kind is None:
+		if self._kind is None and self._unifying:
 			pair_info = self.receiver.request(0x83B5, 0x20 + self.number - 1)
 			if pair_info:
 				kind = ord(pair_info[7:8]) & 0x0F
@@ -130,13 +133,13 @@ class PairedDevice(object):
 
 	@property
 	def serial(self):
-		if self._serial is None:
+		if self._serial is None and self._unifying:
 			self._serial = _hidpp10.get_serial(self)
 		return self._serial or '?'
 
 	@property
 	def keys(self):
-		if self._keys is None:
+		if self._keys is None and self._unifying:
 			self._keys = _hidpp20.get_keys(self) or ()
 		return self._keys
 
@@ -167,7 +170,8 @@ class PairedDevice(object):
 		return _base.request(self.receiver.handle, self.number, request_id, *params)
 
 	def feature_request(self, feature, function=0x00, *params):
-		return _hidpp20.feature_request(self, feature, function, *params)
+		if self._unifying:
+			return _hidpp20.feature_request(self, feature, function, *params)
 
 	def ping(self):
 		return _base.ping(self.receiver.handle, self.number) is not None
@@ -207,14 +211,19 @@ class Receiver(object):
 		assert path
 		self.path = path
 
-		if self.request(0x83B3):
-			self.name = 'Unifying Receiver'
-			self.max_devices = 6
-		else:
-			self.name = 'Nano Receiver'
-			self.max_devices = 1
+		serial_reply = self.request(0x83B5, 0x03)
+		assert serial_reply
+		self._serial = _strhex(serial_reply[1:5])
+		self.max_devices = ord(serial_reply[6:7][0])
 
-		self._serial = None
+		if self.max_devices == 1:
+			self.name = 'Nano Receiver'
+		elif self.max_devices == 6:
+			self.name = 'Unifying Receiver'
+		else:
+			raise Exception("unknown receiver type")
+		self._str = '<%s(%s,%s%s)>' % (self.name.replace(' ', ''), self.path, '' if type(self.handle) == int else 'T', self.handle)
+
 		self._firmware = None
 		self._devices = {}
 
@@ -228,8 +237,9 @@ class Receiver(object):
 
 	@property
 	def serial(self):
-		if self._serial is None and self.handle:
-			self._serial = _hidpp10.get_serial(self)
+		assert self._serial
+		# if self._serial is None and self.handle:
+		# 	self._serial = _hidpp10.get_serial(self)
 		return self._serial
 
 	@property
@@ -250,33 +260,38 @@ class Receiver(object):
 			# clear out all possible flags
 			ok = self.request(0x8000)
 
+		flags = self.request(0x8100)
+		if flags:
+			flags = ord(flags[0:1]) << 16 | ord(flags[1:2]) << 8 | ord(flags[2:3])
+			flags = tuple(_hidpp10.NOTIFICATION_FLAG.flag_names(flags))
+
 		if ok:
-			_log.info("device notifications %s", 'enabled' if enable else 'disabled')
+			_log.info("%s: device notifications %s %s", self, 'enabled' if enable else 'disabled', flags)
 		else:
-			_log.warn("failed to %s device notifications", 'enable' if enable else 'disable')
+			_log.warn("%s: failed to %s device notifications %s", self, 'enable' if enable else 'disable', flags)
 		return ok
 
 	def notify_devices(self):
 		"""Scan all devices."""
 		if self.handle:
 			if not self.request(0x8002, 0x02):
-				_log.warn("failed to trigger device link notifications")
+				_log.warn("%s: failed to trigger device link notifications", self)
 
 	def register_new_device(self, number):
 		if self._devices.get(number) is not None:
-			raise IndexError("device number %d already registered" % number)
+			raise IndexError("%s: device number %d already registered" % (self, number))
 		dev = PairedDevice(self, number)
 		# create a device object, but only use it if the receiver knows about it
 
 		if self.max_devices == 1 and number == 1:
 			# the Nano receiver does not provide the wpid
-			_log.info("found Nano device %d (%s)", number, dev.serial)
+			_log.info("%s: found Nano device %d (%s)", self, number, dev.serial)
 			# dev._wpid = self.serial + ':1'
 			self._devices[number] = dev
 			return dev
 
 		if dev.wpid:
-			# _log.info("found Unifying device %d (%s)", number, dev.wpid)
+			_log.info("%s: found Unifying device %d (%s)", self, number, dev.wpid)
 			self._devices[number] = dev
 			return dev
 		self._devices[number] = None
@@ -287,7 +302,7 @@ class Receiver(object):
 			reply = self.request(0x80B2, lock, device, timeout)
 			if reply:
 				return True
-			_log.warn("failed to %s the receiver lock", 'close' if lock_closed else 'open')
+			_log.warn("%s: failed to %s the receiver lock", self, 'close' if lock_closed else 'open')
 
 	def count(self):
 		count = self.request(0x8102)
@@ -298,7 +313,7 @@ class Receiver(object):
 			return _base.request(self.handle, 0xFF, request_id, *params)
 
 	def __iter__(self):
-		for number in range(1, 1 + MAX_PAIRED_DEVICES):
+		for number in range(1, 1 + self.max_devices):
 			if number in self._devices:
 				dev = self._devices[number]
 			else:
@@ -316,7 +331,7 @@ class Receiver(object):
 
 		if type(key) != int:
 			raise TypeError('key must be an integer')
-		if key < 1 or key > MAX_PAIRED_DEVICES:
+		if key < 1 or key > self.max_devices:
 			raise IndexError(key)
 
 		return self.register_new_device(key)
@@ -353,7 +368,7 @@ class Receiver(object):
 		return self.path.__hash__()
 
 	def __str__(self):
-		return '<Receiver(%s,%s,%s%s)>' % (self.path, self.name, '' if type(self.handle) == int else 'T', self.handle)
+		return self._str
 	__unicode__ = __repr__ = __str__
 
 	__bool__ = __nonzero__ = lambda self: self.handle is not None

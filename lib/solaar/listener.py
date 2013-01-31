@@ -5,7 +5,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 from logging import getLogger, DEBUG as _DEBUG
-_log = getLogger('listener')
+_log = getLogger('solaar.listener')
 del getLogger
 
 from logitech.unifying_receiver import (Receiver,
@@ -45,21 +45,16 @@ class ReceiverListener(_listener.EventsListener):
 		self._last_tick = 0
 
 		self.status_changed_callback = status_changed_callback
-
-		# make it a bit similar with the regular devices
-		receiver.kind = None
-		# replace the
-		receiver.handle = _listener.ThreadedHandle(receiver.handle, receiver.path)
 		receiver.status = _status.ReceiverStatus(receiver, self._status_changed)
 
 	def has_started(self):
-		_log.info("notifications listener has started")
+		_log.info("%s: notifications listener has started (%s)", self.receiver, self.receiver.handle)
 		self.receiver.enable_notifications()
 		self.receiver.notify_devices()
 		self._status_changed(self.receiver, _status.ALERT.LOW)
 
 	def has_stopped(self):
-		_log.info("notifications listener has stopped")
+		_log.info("%s: notifications listener has stopped", self.recever)
 		if self.receiver:
 			self.receiver.enable_notifications(False)
 			self.receiver.close()
@@ -68,12 +63,12 @@ class ReceiverListener(_listener.EventsListener):
 
 	def tick(self, timestamp):
 		if _log.isEnabledFor(_DEBUG):
-			_log.debug("polling status: %s %s", self.receiver, list(iter(self.receiver)))
+			_log.debug("%s: polling status: %s", self.receiver, list(iter(self.receiver)))
 
 		if self._last_tick > 0 and timestamp - self._last_tick > _POLL_TICK * 3:
 			# if we missed a couple of polls, most likely the computer went into
 			# sleep, and we have to reinitialize the receiver again
-			_log.warn("possible sleep detected, closing this listener")
+			_log.warn("%s: possible sleep detected, closing this listener", self.receiver)
 			self.stop()
 			return
 
@@ -91,7 +86,7 @@ class ReceiverListener(_listener.EventsListener):
 
 	def _status_changed(self, device, alert=_status.ALERT.NONE, reason=None):
 		if _log.isEnabledFor(_DEBUG):
-			_log.debug("status_changed %s: %s %s (%X) %s", device,
+			_log.debug("%s: status_changed %s: %s, %s (%X) %s", self.receiver, device,
 						None if device is None else 'active' if device.status else 'inactive',
 						None if device is None else device.status,
 						alert, reason or '')
@@ -113,8 +108,8 @@ class ReceiverListener(_listener.EventsListener):
 					self.status_changed_callback(self.receiver)
 
 	def _notifications_handler(self, n):
-		_log.debug("handling %s", n)
 		assert self.receiver
+		_log.debug("%s: handling %s", self.receiver, n)
 		if n.devnumber == 0xFF:
 			# a receiver notification
 			if self.receiver.status is not None:
@@ -126,7 +121,7 @@ class ReceiverListener(_listener.EventsListener):
 			dev = self.receiver[n.devnumber]
 
 			if not dev:
-				_log.warn("received %s for invalid device %d: %r", n, n.devnumber, dev)
+				_log.warn("%s: received %s for invalid device %d: %r", self.receiver, n, n.devnumber, dev)
 				return
 
 			if not already_known:
@@ -142,7 +137,7 @@ class ReceiverListener(_listener.EventsListener):
 				if self.receiver.status.lock_open and not already_known:
 					# this should be the first notification after a device was paired
 					assert n.sub_id == 0x41 and n.address == 0x04
-					_log.info("pairing detected new device")
+					_log.info("%s: pairing detected new device", self.receiver)
 					self.receiver.status.new_device = dev
 
 	def __str__(self):
