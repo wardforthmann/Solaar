@@ -119,6 +119,9 @@ def _show_details(button, window):
 
 
 def select(window, device):
+	"""Pops up the window, and selects a certain device."""
+	assert window
+	window.present()
 	it = _receiver_row(window._tree, device, False) if device.kind is None else _device_row(window._tree, device, False)
 	if it:
 		selection = window._tree.get_selection()
@@ -256,33 +259,32 @@ def _update_info_panel(device, window, full=False):
 	p.set_visible(True)
 
 
-def update(window, receiver, device=None):
-	assert receiver is not None
+def update(window, device=None):
 	# print ("update", receiver, receiver, len(receiver), device)
 	# window.set_icon_name(_icons.APP_ICON[1 if receiver else -1])
 
 	model = window._tree.get_model()
-	if device is None:
-		iter = _receiver_row(window._tree, receiver, bool(receiver))
-		assert iter
-		if receiver:
-			model.set_value(iter, _COLUMN.ACTIVE, True)
-		elif iter:
-			model.remove(iter)
+	if device.kind is None:
+		it = _receiver_row(window._tree, device, bool(device))
+		assert it
+		if device:
+			model.set_value(it, _COLUMN.ACTIVE, True)
+		elif it:
+			model.remove(it)
 
 	else:
-		iter = _device_row(window._tree, device)
-		assert iter
-		model.set_value(iter, _COLUMN.ACTIVE, bool(device.status))
+		it = _device_row(window._tree, device)
+		assert it
+		model.set_value(it, _COLUMN.ACTIVE, bool(device.status))
 		battery_level = device.status.get(_status.BATTERY_LEVEL)
 		battery_icon_name = _icons.battery(-1 if battery_level is None else battery_level)
-		model.set_value(iter, _COLUMN.STATUS_ICON, '' if battery_level is None else battery_icon_name)
+		model.set_value(it, _COLUMN.STATUS_ICON, '' if battery_level is None else battery_icon_name)
 
 	window._tree.expand_all()
 	selected_device = _find_selected_device(window)
 	if device == selected_device:
 		_update_info_panel(device, window)
-	elif selected_device is None:
+	elif selected_device is None and device.kind is not None:
 		select(window, device)
 
 #
@@ -507,7 +509,7 @@ def _create_window_layout(window):
 	return vbox
 
 
-def create(title, name, max_devices, systray=False):
+def create(title, systray=False):
 	window = Gtk.Window()
 	window.set_title(title)
 	window.set_icon_name(_icons.APP_ICON[1])

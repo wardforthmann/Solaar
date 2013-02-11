@@ -23,8 +23,6 @@ def _require(module, os_package):
 def _parse_arguments():
 	import argparse
 	arg_parser = argparse.ArgumentParser(prog=NAME.lower())
-	arg_parser.add_argument('-S', '--no-systray', action='store_false', dest='systray',
-							help='do not place an icon in the desktop\'s systray')
 	arg_parser.add_argument('-N', '--no-notifications', action='store_false', dest='notifications',
 							help='disable desktop notifications (shown only when in systray)')
 	arg_parser.add_argument('-d', '--debug', action='count', default=0,
@@ -50,28 +48,27 @@ def _run(args):
 	# even if --no-notifications is given on the command line, still have to
 	# check they are available, and decide whether to put the option in the
 	# systray icon
-	args.notifications &= args.systray
-	if args.systray and ui.notify.init(NAME):
+	if ui.notify.init():
 		ui.action.toggle_notifications.set_active(args.notifications)
 		if not args.notifications:
 			ui.notify.uninit()
 	else:
 		ui.action.toggle_notifications = None
 
-	from solaar.listener import DUMMY, ReceiverListener
-	window = ui.main_window.create(NAME, DUMMY.name, DUMMY.max_devices, args.systray)
-	if args.systray:
-		menu_actions = (ui.action.toggle_notifications,
-						ui.action.about)
-		icon = ui.status_icon.create(window, menu_actions)
-	else:
-		icon = None
+	from solaar.listener import ReceiverListener
+	window = ui.main_window.create(NAME, args.systray)
+	assert window
+	icon = ui.status_icon.create(window)
+	assert icon
 
 	listeners = {}
 	from logitech.unifying_receiver import base as _base
 
-	def receivers_events(action, r):
-		if action == 'add':
+	from gi.repository import Gtk, GLib
+	from logitech.unifying_receiver import status
+
+	def receivers_events(action, receiver):
+		def _open_receiver(r):
 			try:
 				l = ReceiverListener.open(r.path, status_changed)
 				if l:
@@ -85,31 +82,31 @@ def _run(args):
 				# 				'Found a possible Unifying Receiver device,\n'
 				# 				'but did not have permission to open it.')
 
-	from gi.repository import Gtk, GLib
-	from logitech.unifying_receiver import status
+		if action == 'add':
+			GLib.idle_add(_open_receiver, receiver)
 
 	# callback delivering status notifications from the receiver/devices to the UI
-	def status_changed(receiver, device=None, alert=status.ALERT.NONE, reason=None):
-		# print ("status changed", receiver, device, reason)
-		if alert & status.ALERT.MED:
+	def status_changed(device, alert=status.ALERT.NONE, reason=None):
+		assert device is not None
+		# print ("status changed", device, reason)
+		GLib.idle_add(ui.main_window.update, window, device)
+		if alert & status.ALERT.WINDOW:
 			GLib.idle_add(window.present)
-		if window:
-			GLib.idle_add(ui.main_window.update, window, receiver, device)
-			if device and alert & status.ALERT.MED:
-				GLib.idle_add(ui.main_window.select, window, device)
+			GLib.idle_add(ui.main_window.select, window, device)
 		if icon:
-			GLib.idle_add(ui.status_icon.update, icon, receiver, device)
+			GLib.idle_add(ui.status_icon.update, icon, device)
 
 		if ui.notify.available:
 			# always notify on receiver updates
-			if device is None or alert & status.ALERT.LOW:
-				GLib.idle_add(ui.notify.show, device or receiver, reason)
+			if device.kind is None or alert & status.ALERT.NOTIFICATION:
+				GLib.idle_add(ui.notify.show, device, reason)
 
 	GLib.timeout_add(10, _base.notify_on_receivers, receivers_events)
 	Gtk.main()
 
 	[l.stop() for l in listeners.values() if l]
 	ui.notify.uninit()
+	[l.join() for l in listeners.values() if l]
 
 
 def main():
@@ -118,40 +115,13 @@ def main():
 	_require('gi.repository.Gtk', 'gir1.2-gtk-3.0')
 	args = _parse_arguments()
 
-	# ensure no more than a single instance runs at a time
-	import os.path as _path
-	import os as _os
-	lock_fd = None
-	for p in _os.environ.get('XDG_RUNTIME_DIR'), '/run/lock', '/var/lock', _os.environ.get('TMPDIR', '/tmp'):
-		if p and _path.isdir(p) and _os.access(p, _os.W_OK):
-			lock_path = _path.join(p, 'solaar.single-instance.%d' % _os.getuid())
-			try:
-				lock_fd = open(lock_path, 'wb')
-				# print ("Single instance lock file is %s" % lock_path)
-				break
-			except:
-				pass
-
-	if lock_fd:
-		import fcntl as _fcntl
-		try:
-			_fcntl.flock(lock_fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-		except IOError as e:
-			if e.errno == 11:
-				import sys
-				sys.exit("solaar: error: Solaar is already running.")
-			else:
-				raise
-	else:
-		import sys
-		print ("solaar: warning: failed to create single instance lock file, ignoring.", file=sys.stderr)
-
+	import appinstance
+	appid = appinstance.check()
 	try:
 		_run(args)
 	finally:
-		if lock_fd:
-			_fcntl.flock(lock_fd, _fcntl.LOCK_UN)
-			lock_fd.close()
+		appinstance.close(appid)
+
 
 if __name__ == '__main__':
 	main()

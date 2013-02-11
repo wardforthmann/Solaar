@@ -39,11 +39,12 @@ _POLL_TICK = 60  # seconds
 class ReceiverListener(_listener.EventsListener):
 	"""Keeps the status of a Receiver.
 	"""
-	def __init__(self, receiver, status_changed_callback=None):
+	def __init__(self, receiver, status_changed_callback):
 		super(ReceiverListener, self).__init__(receiver, self._notifications_handler)
 		self.tick_period = _POLL_TICK
 		self._last_tick = 0
 
+		assert status_changed_callback
 		self.status_changed_callback = status_changed_callback
 		receiver.status = _status.ReceiverStatus(receiver, self._status_changed)
 
@@ -51,14 +52,14 @@ class ReceiverListener(_listener.EventsListener):
 		_log.info("%s: notifications listener has started (%s)", self.receiver, self.receiver.handle)
 		self.receiver.enable_notifications()
 		self.receiver.notify_devices()
-		self._status_changed(self.receiver, _status.ALERT.LOW)
+		self._status_changed(self.receiver, _status.ALERT.NOTIFICATION)
 
 	def has_stopped(self):
 		_log.info("%s: notifications listener has stopped", self.receiver)
 		if self.receiver:
 			self.receiver.enable_notifications(False)
 			self.receiver.close()
-		self._status_changed(None, _status.ALERT.LOW)
+		self._status_changed(self.receiver, _status.ALERT.NOTIFICATION)
 		self.receiver = None
 
 	def tick(self, timestamp):
@@ -85,27 +86,26 @@ class ReceiverListener(_listener.EventsListener):
 				dev.status.poll(timestamp)
 
 	def _status_changed(self, device, alert=_status.ALERT.NONE, reason=None):
+		assert device is not None
 		if _log.isEnabledFor(_DEBUG):
 			_log.debug("%s: status_changed %s: %s, %s (%X) %s", self.receiver, device,
-						None if device is None else 'active' if device.status else 'inactive',
-						None if device is None else device.status,
-						alert, reason or '')
+						'active' if device.status else 'inactive',
+						device.status, alert, reason or '')
 
-		if self.status_changed_callback:
-			if device is None or device.kind is None:
-				# the status of the receiver changed
-				self.status_changed_callback(self.receiver, None, alert, reason)
-			else:
-				if device.status is None:
-					# device was unpaired, and since the object is weakref'ed
-					# it won't be valid for much longer
-					device = _ghost(device)
+		if device.kind is None:
+			# the status of the receiver changed
+			self.status_changed_callback(device, alert, reason)
+		else:
+			if device.status is None:
+				# device was unpaired, and since the object is weakref'ed
+				# it won't be valid for much longer
+				device = _ghost(device)
 
-				self.status_changed_callback(self.receiver, device, alert, reason)
+			self.status_changed_callback(device, alert, reason)
 
-				if device.status is None:
-					# the receiver changed status as well
-					self.status_changed_callback(self.receiver)
+			if device.status is None:
+				# the receiver changed status as well
+				self.status_changed_callback(self.receiver)
 
 	def _notifications_handler(self, n):
 		assert self.receiver
@@ -145,7 +145,8 @@ class ReceiverListener(_listener.EventsListener):
 	__unicode__ = __str__
 
 	@classmethod
-	def open(self, path, status_changed_callback=None):
+	def open(self, path, status_changed_callback):
+		assert status_changed_callback
 		receiver = Receiver.open(path)
 		if receiver:
 			rl = ReceiverListener(receiver, status_changed_callback)

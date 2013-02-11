@@ -23,7 +23,7 @@ from . import base as _base
 #
 #
 
-class ThreadedHandle(object):
+class _ThreadedHandle(object):
 	"""A thread-local wrapper with different open handles for each thread.
 
 	Closing a ThreadedHandle will close all handles.
@@ -31,17 +31,17 @@ class ThreadedHandle(object):
 
 	__slots__ = ['path', '_local', '_handles', '_listener']
 
-	def __init__(self, initial_handle, path):
-		assert initial_handle
-		if type(initial_handle) != int:
-			raise TypeError('expected int as initial handle, got %r' % initial_handle)
+	def __init__(self, listener, path, handle):
+		assert listener is not None
+		assert path is not None
+		assert handle is not None
+		assert type(handle) == int
 
-		assert path
+		self._listener = listener
 		self.path = path
-		self._listener = None
 		self._local = _threading.local()
-		self._local.handle = initial_handle
-		self._handles = [initial_handle]
+		self._local.handle = handle
+		self._handles = [handle]
 
 	def _open(self):
 		handle = _base.open_path(self.path)
@@ -103,7 +103,7 @@ class ThreadedHandle(object):
 # a while for it to acknowledge it.
 _EVENT_READ_TIMEOUT = 500
 
-# After this many read that did not produce a packet, call the tick() method.
+# After this many reads that did not produce a packet, call the tick() method.
 _IDLE_READS = 4
 
 
@@ -115,12 +115,8 @@ class EventsListener(_threading.Thread):
 	def __init__(self, receiver, notifications_callback):
 		super(EventsListener, self).__init__(name=self.__class__.__name__)
 
-		assert receiver
-		assert receiver.handle
-		assert isinstance(receiver.handle, int)
 		# replace the handle with a threaded one
-		receiver.handle = ThreadedHandle(receiver.handle, receiver.path)
-		receiver.handle._listener = self
+		receiver.handle = _ThreadedHandle(self, receiver.path, receiver.handle)
 
 		self.daemon = True
 		self._active = False
@@ -200,8 +196,8 @@ class EventsListener(_threading.Thread):
 		# i.e. triggered by a callback handling a previous notification.
 		assert _threading.current_thread() == self
 		if self._active:  # and _threading.current_thread() == self:
-			if _log.isEnabledFor(_DEBUG):
-				_log.debug("queueing unhandled %s", n)
+			# if _log.isEnabledFor(_DEBUG):
+			# 	_log.debug("queueing unhandled %s", n)
 			self._queued_notifications.put(n)
 
 	def __bool__(self):

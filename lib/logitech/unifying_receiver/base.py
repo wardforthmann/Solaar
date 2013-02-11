@@ -75,9 +75,14 @@ def receivers():
 
 
 def notify_on_receivers(callback):
+	"""Starts a thread that monitors receiver events from udev."""
 	from threading import Thread as _Thread
 	t = _Thread(name='receivers_monitor', target=_hid.monitor,
-				args=(callback, DEVICE_UNIFYING_RECEIVER, DEVICE_UNIFYING_RECEIVER_2, DEVICE_NANO_RECEIVER))
+				args=(callback,
+					DEVICE_UNIFYING_RECEIVER,
+					DEVICE_UNIFYING_RECEIVER_2,
+					DEVICE_NANO_RECEIVER,
+					))
 	t.daemon = True
 	t.start()
 
@@ -201,6 +206,9 @@ def _read(handle, timeout):
 
 		return report_id, devnumber, data[2:]
 
+#
+#
+#
 
 def _skip_incoming(handle, ihandle, notifications_hook):
 	"""Read anything already in the input buffer.
@@ -229,9 +237,6 @@ def _skip_incoming(handle, ihandle, notifications_hook):
 		else:
 			return
 
-#
-#
-#
 
 def make_notification(devnumber, data):
 	"""Guess if this is a notification (and not just a request reply), and
@@ -286,7 +291,7 @@ def request(handle, devnumber, request_id, *params):
 	request_data = _pack(b'!H', request_id) + params
 
 	ihandle = int(handle)
-	notifications_hook = handle.notifications_hook if hasattr(handle, 'notifications_hook') else None
+	notifications_hook = getattr(handle, 'notifications_hook', None)
 	_skip_incoming(handle, ihandle, notifications_hook)
 	write(ihandle, devnumber, request_data)
 
@@ -370,13 +375,13 @@ def ping(handle, devnumber):
 	request_data = _pack(b'!HBBB', request_id, 0, 0, _random_bits(8))
 
 	ihandle = int(handle)
-	notifications_hook = handle.notifications_hook if hasattr(handle, 'notifications_hook') else None
+	notifications_hook = getattr(handle, 'notifications_hook', None)
 	_skip_incoming(handle, ihandle, notifications_hook)
 	write(ihandle, devnumber, request_data)
 
 	while True:
 		now = _timestamp()
-		reply = _read(ihandle, _PING_TIMEOUT)
+		reply = _read(handle, _PING_TIMEOUT)
 		delta = _timestamp() - now
 
 		if reply:

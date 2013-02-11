@@ -2,61 +2,95 @@
 #
 #
 
-# import logging
+from __future__ import absolute_import, division, print_function, unicode_literals
 
-# try:
-# 	from gi.repository import Indicate
-# 	from time import time as _timestamp
+#
+#
+#
 
-# 	# import ui
+try:
+	from gi.repository import AppIndicator3 as AppIndicator
+except:
+	from gi.repository import AppIndicator
 
-# 	# necessary because the notifications daemon does not know about our XDG_DATA_DIRS
-# 	_icons = {}
+from gi.repository import Gtk
 
-# 	# def _icon(title):
-# 	# 	if title not in _icons:
-# 	# 		_icons[title] = ui.icon_file(title)
+from . import (action as _action,
+				notify as _notify,
+				icons as _icons,
+				main_window as _main_window)
+# from logitech.unifying_receiver import status as _status
 
-# 	# 	return _icons.get(title)
 
-# 	def init(app_title):
-# 		global available
+def create(window):
+	name = window.get_title()
 
-# 		try:
-# 			s = Indicate.Server()
-# 			s.set_type('message.im')
-# 			s.set_default()
-# 			print s
-# 			s.show()
-# 			s.connect('server-display', server_display)
+	ind = AppIndicator.Indicator.new('indicator-solaar', _icons.APP_ICON[0], AppIndicator.IndicatorCategory.HARDWARE)
+	ind.set_title(name)
+	ind._window = window
 
-# 			i = Indicate.Indicator()
-# 			i.set_property('sender', 'test message sender')
-# 			i.set_property('body', 'test message body')
-# 			i.set_property_time('time', _timestamp())
-# 			i.set_subtype('im')
-# 			print i, i.list_properties()
-# 			i.show()
-# 			i.connect('user-display', display)
+	menu = Gtk.Menu()
+	ind.set_menu(menu)
 
-# 			pass
-# 		except:
-# 			available = False
+	no_devices = Gtk.MenuItem.new_with_label('No devices')
+	no_devices.set_sensitive(False)
+	menu.append(no_devices)
 
-# 	init('foo')
+	separator = Gtk.SeparatorMenuItem.new()
+	separator.set_name('')
+	menu.append(separator)
 
-# 	# assumed to be working since the import succeeded
-# 	available = True
+	menu.append(_action.make_toggle('notifications', 'Notifications', _notify.toggle))
+	menu.append(_action.make('application-exit', 'Quit', Gtk.main_quit))
+	menu.show_all()
 
-# 	def server_display(s):
-# 		print 'server display', s
+	ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+	return ind
 
-# 	def display(i):
-# 		print "indicator display", i
-# 		i.hide()
 
-# except ImportError:
-# 	available = False
-# 	init = lambda app_title: False
-# 	uninit = lambda: None
-# 	show = lambda dev: None
+def destroy(ind):
+	ind.set_status(AppIndicator.IndicatorStatus.PASSIVE)
+	ind.set_menu(None)
+
+
+def _create_menu_item(ind, device):
+	item = Gtk.MenuItem.new()
+	item.set_name(device.serial)
+	item.set_visible(True)
+	item.connect('activate', _main_window.select, ind._window, device)
+	_update_menu_item(item, device)
+	return item
+
+
+def _update_menu_item(item, device):
+	if device.status is None:
+		item.get_parent().remove(item)
+		return
+
+	item.set_label(device.name)
+
+
+def update(ind, device):
+	assert device is not None
+	if device.kind is None:
+		return
+
+	# print (device, device.status)
+
+	m = ind.get_menu()
+	items = m.get_children()
+	index = 1
+	while True:
+		n = items[index].get_name()
+		if n:
+			if n == device.serial:
+				_update_menu_item(items[index], device)
+				break
+		else:
+			if device.status is not None:
+				m.insert(_create_menu_item(ind, device), index)
+			break
+
+		index += 1
+
+	items[0].set_visible(index == 1 and not m.get_children()[1].get_name())

@@ -6,7 +6,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from gi.repository import Gtk, Gdk
 
-from . import notify, pair_window
+from . import pair_window
 from ..ui import error_dialog
 
 
@@ -19,7 +19,7 @@ def make(name, label, function, *args):
 	action.set_icon_name(name)
 	if function:
 		action.connect('activate', function, *args)
-	return action
+	return action.create_menu_item()
 
 
 def make_toggle(name, label, function, *args):
@@ -31,15 +31,6 @@ def make_toggle(name, label, function, *args):
 #
 #
 #
-
-def _toggle_notifications(action):
-	if action.get_active():
-		notify.init('Solaar')
-	else:
-		notify.uninit()
-	action.set_sensitive(notify.available)
-toggle_notifications = make_toggle('notifications', 'Notifications', _toggle_notifications)
-
 
 def _show_about_window(action):
 	about = Gtk.AboutDialog()
@@ -55,6 +46,7 @@ def _show_about_window(action):
 
 	about.set_authors(('Daniel Pavel http://github.com/pwr',))
 	try:
+		about.add_credit_section('GUI Design', ('Julien Gascard',))
 		about.add_credit_section('Testing', ('Douglas Wagner', 'Julien Gascard'))
 		about.add_credit_section('Technical specifications\nprovided by',
 						('Julien Danjou http://julien.danjou.info/blog/2012/logitech-unifying-upower',))
@@ -66,13 +58,10 @@ def _show_about_window(action):
 		pass
 
 	about.set_website('http://pwr.github.com/Solaar/')
-	about.set_website_label('Solaar')
+	about.set_website_label(_NAME)
 
 	about.run()
 	about.destroy()
-about = make('help-about', 'About ' + _NAME, _show_about_window)
-
-quit = make('application-exit', 'Quit', Gtk.main_quit)
 
 #
 #

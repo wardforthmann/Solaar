@@ -169,9 +169,11 @@ def create():
 
 
 def update(box, device, device_active):
-	assert box
-	assert device
+	assert box is not None
+	assert device is not None
 
+	if not box._last_device:
+		box._last_device = None
 	if device != box._last_device:
 		box.set_visible(False)
 

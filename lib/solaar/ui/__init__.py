@@ -44,4 +44,9 @@ def error_dialog(window, title, text):
 	m.destroy()
 
 
-from . import notify, status_icon, main_window
+try:
+	from . import indicate as status_icon
+except ImportError:
+	from . import status_icon
+
+from . import notify, main_window
