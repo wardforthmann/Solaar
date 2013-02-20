@@ -115,7 +115,7 @@ def main():
 	_require('gi.repository.Gtk', 'gir1.2-gtk-3.0')
 	args = _parse_arguments()
 
-	import appinstance
+	from . import appinstance
 	appid = appinstance.check()
 	try:
 		_run(args)
