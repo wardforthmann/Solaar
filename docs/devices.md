@@ -95,6 +95,7 @@ Mice (Unifying):
 | Anywhere MX      | 1.0   | yes     | R/W   | smooth scrolling                |
 | Anywhere MX 2    | 4.5   | yes     |       | smooth scrolling                |
 | MX Master        | 4.5   | yes     | R/W   | smart shift                     |
+| MX Master 2S     | 4.5   | yes     | R/W   | smart shift                     |
 | Cube             | 2.0   | yes     |       |                                 |
 
 
